@@ -3,11 +3,12 @@ import { storageGet, storageSet, storageSubscribe } from "./storage";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const COURSES = [
-  { id: 1, name: "The Quarry at La Quinta",    day: "Day 2",    format: "2v2 Best Ball (Net)", type: "bestball" },
-  { id: 2, name: "La Quinta – Mountain Course", day: "Day 3 AM", format: "2v2 Best Ball (Net)", type: "bestball" },
-  { id: 3, name: "La Quinta – Dunes Course",    day: "Day 3 PM", format: "2v2 Best Ball (Net)", type: "bestball" },
-  { id: 4, name: "PGA West – Stadium Course",   day: "Day 4",    format: "1v1 Singles (Net)",   type: "singles" },
+  { id: 1, name: "The Quarry at La Quinta",    day: "Day 2",    format: "2v2 Best Ball (Net)", type: "bestball", gameType: "bestball" },
+  { id: 2, name: "La Quinta – Mountain Course", day: "Day 3 AM", format: "2v2 Best Ball (Net)", type: "bestball", gameType: "bestball" },
+  { id: 3, name: "La Quinta – Dunes Course",    day: "Day 3 PM", format: "2v2 Best Ball (Net)", type: "bestball", gameType: "bestball" },
+  { id: 4, name: "PGA West – Stadium Course",   day: "Day 4",    format: "1v1 Singles (Net)",   type: "singles", gameType: "singles" },
 ];
+const GAME_TYPE_LABELS = { bestball: "Best Ball (Net)", singles: "Singles (Net)", matchplay: "Match Play" };
 
 const DEFAULT_RULES = [
   "Rounds 1–3: 2v2 Best Ball (Net) — 3 matches per round, 1 point each",
@@ -79,7 +80,35 @@ function calcSettlement(bets, names) {
   return {balances:bal, transactions:txns};
 }
 
-function autoCalcMatch(courseId, matchIdx, pairings, players, roundScores) {
+// Per-hole match play: each side wins a hole if their best gross is lower. Most holes won = match win.
+function calcMatchPlayHoles(courseId, matchIdx, pairings, players, roundScores) {
+  const pair = pairings[courseId]?.[matchIdx];
+  if (!pair) return { t1: 0, t2: 0, holesPlayed: 0, result: null };
+  let t1Pts = 0, t2Pts = 0, holesPlayed = 0;
+  for (let h = 0; h < 18; h++) {
+    const getScore = (teamKey, pIdx) => {
+      const p = players[teamKey]?.[pIdx];
+      if (!p) return null;
+      const holes = roundScores?.[p.name]?.[courseId]?.holes;
+      if (!holes) return null;
+      const v = parseInt(holes[h]);
+      return isNaN(v) ? null : v;
+    };
+    const t1s = pair.t1.map(pi => getScore("team1", pi)).filter(v => v !== null);
+    const t2s = pair.t2.map(pi => getScore("team2", pi)).filter(v => v !== null);
+    if (!t1s.length || !t2s.length) continue;
+    holesPlayed++;
+    const b1 = Math.min(...t1s), b2 = Math.min(...t2s);
+    if (b1 < b2) t1Pts++; else if (b2 < b1) t2Pts++;
+  }
+  const result = holesPlayed === 0 ? null : t1Pts > t2Pts ? "team1" : t2Pts > t1Pts ? "team2" : holesPlayed === 18 ? "half" : null;
+  return { t1: t1Pts, t2: t2Pts, holesPlayed, result };
+}
+
+function autoCalcMatch(courseId, matchIdx, pairings, players, roundScores, gameType) {
+  if (gameType === "matchplay") {
+    return calcMatchPlayHoles(courseId, matchIdx, pairings, players, roundScores).result;
+  }
   const pair = pairings[courseId]?.[matchIdx];
   if (!pair) return null;
   const getNet = (teamKey, pIdx) => {
@@ -96,10 +125,14 @@ function autoCalcMatch(courseId, matchIdx, pairings, players, roundScores) {
   return b1 < b2 ? "team1" : b2 < b1 ? "team2" : "half";
 }
 
-// Returns gross total from a score that may be a string (legacy) or {front9, back9} object
+// Returns gross total from a score that may be a string (legacy), {front9,back9}, or {holes[]} object
 function getGross(score) {
   if (score === null || score === undefined || score === "") return null;
   if (typeof score === "object") {
+    if (score.holes?.length === 18) {
+      const vals = score.holes.map(h => parseInt(h)).filter(v => !isNaN(v));
+      if (vals.length === 18) return vals.reduce((s, v) => s + v, 0);
+    }
     const f = parseInt(score.front9), b = parseInt(score.back9);
     if (!isNaN(f) && !isNaN(b)) return f + b;
     return null;
@@ -113,7 +146,7 @@ function getMergedCourses(courseList) {
   if (!courseList?.length) return COURSES;
   return COURSES.map(c => {
     const cl = courseList.find(x => x.id === c.id);
-    return cl ? { ...c, name: cl.name, day: cl.day } : c;
+    return cl ? { ...c, name: cl.name, day: cl.day, gameType: cl.gameType || c.gameType } : c;
   });
 }
 
@@ -123,7 +156,7 @@ const DEFAULT_STATE = {
   matches: initMatches(),
   pairings: initPairings(),
   rules: DEFAULT_RULES,
-  courseList: COURSES.map(c=>({id:c.id,name:c.name,day:c.day})),
+  courseList: COURSES.map(c=>({id:c.id,name:c.name,day:c.day,gameType:c.gameType})),
   bets: [],
   roundScores: {},
 };
@@ -220,16 +253,20 @@ function PlayerView({playerName, state, setState, onSwitch}) {
             <span style={SH}>MY MATCH RESULTS</span>
             {getMyMatches().length===0&&<div style={{color:"rgba(255,255,255,0.4)",fontSize:13}}>No matches assigned yet.</div>}
             {getMyMatches().map(({course,mi,pair,result},i)=>{
-              const t1n=pair.t1.map(i=>players.team1[i]?.name).filter(Boolean).join(" & ");
-              const t2n=pair.t2.map(i=>players.team2[i]?.name).filter(Boolean).join(" & ");
+              const t1n=pair.t1.map(j=>players.team1[j]?.name).filter(Boolean).join(" & ");
+              const t2n=pair.t2.map(j=>players.team2[j]?.name).filter(Boolean).join(" & ");
               const myNames=myTeam==="team1"?t1n:t2n;
               const oppNames=myTeam==="team1"?t2n:t1n;
               const won=(result==="team1"&&myTeam==="team1")||(result==="team2"&&myTeam==="team2");
               const lost=(result==="team1"&&myTeam==="team2")||(result==="team2"&&myTeam==="team1");
               const halved=result==="half";
+              const isMatchPlay=course.gameType==="matchplay";
               return (
                 <div key={i} style={{...CARD,borderLeft:`3px solid ${won?"#4ade80":lost?"#f87171":halved?gold:"rgba(255,255,255,0.1)"}`}}>
-                  <div style={{fontSize:10,color:gold,letterSpacing:2,marginBottom:4}}>{course.day} — {course.name}</div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+                    <div style={{fontSize:10,color:gold,letterSpacing:2}}>{course.day} — {course.name}</div>
+                    {isMatchPlay&&<span style={{fontSize:9,background:"rgba(201,168,76,0.15)",border:`1px solid rgba(201,168,76,0.3)`,borderRadius:10,padding:"2px 8px",color:gold,letterSpacing:1}}>MATCH PLAY</span>}
+                  </div>
                   <div style={{fontSize:13,marginBottom:10}}>
                     <span style={{color:"#4ade80"}}>{myNames}</span>
                     <span style={{color:"rgba(255,255,255,0.3)",margin:"0 8px"}}>vs</span>
@@ -238,6 +275,18 @@ function PlayerView({playerName, state, setState, onSwitch}) {
                   <div style={{fontSize:20,fontWeight:"bold",color:won?"#4ade80":lost?"#f87171":halved?gold:"rgba(255,255,255,0.3)"}}>
                     {won?"✓ WIN":lost?"✕ LOSS":halved?"½ HALVED":"⏳ Pending"}
                   </div>
+                  {isMatchPlay&&(
+                    <HoleScoringSection
+                      playerName={playerName}
+                      courseId={course.id}
+                      pair={pair}
+                      players={players}
+                      myTeam={myTeam}
+                      myIdx={myIdx}
+                      roundScores={state.roundScores}
+                      state={state}
+                    />
+                  )}
                 </div>
               );
             })}
@@ -560,11 +609,12 @@ function ScoresTab({playerName, myPlayer, myTeam, myIdx, state}) {
       if (!cur.roundScores[playerName]) cur.roundScores[playerName] = {};
       COURSES.forEach(c => { cur.roundScores[playerName][c.id] = localScores[c.id]; });
       COURSES.forEach(c => {
+        const gt = (cur.courseList || state.courseList)?.find(cl => cl.id === c.id)?.gameType || c.gameType;
         (cur.pairings || pairings)[c.id]?.forEach((pair, mi) => {
           const inT1 = myTeam === "team1" && pair.t1.includes(myIdx);
           const inT2 = myTeam === "team2" && pair.t2.includes(myIdx);
           if (inT1 || inT2) {
-            const auto = autoCalcMatch(c.id, mi, cur.pairings || pairings, cur.players || players, cur.roundScores);
+            const auto = autoCalcMatch(c.id, mi, cur.pairings || pairings, cur.players || players, cur.roundScores, gt);
             if (auto) {
               if (!cur.matches) cur.matches = initMatches();
               if (cur.matches[c.id]?.[mi]) cur.matches[c.id][mi].result = auto;
@@ -703,6 +753,147 @@ function LiveScoresSection({courses, players, roundScores, teamNames}) {
         );
       }).filter(Boolean)}
     </>
+  );
+}
+
+// ─── Hole-by-hole scoring (Match Play) ───────────────────────────────────────
+function HoleScoringSection({ playerName, courseId, pair, players, myTeam, myIdx, roundScores, state }) {
+  function initHoles() {
+    const existing = roundScores?.[playerName]?.[courseId]?.holes;
+    if (existing?.length === 18) return existing.map(h => (h == null || h === "") ? "" : String(h));
+    return Array(18).fill("");
+  }
+
+  const [holes, setHoles] = useState(initHoles);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => { setHoles(initHoles()); setSaved(false); }, [roundScores, playerName, courseId]); // eslint-disable-line
+
+  function setHole(idx, val) {
+    if (val === "" || /^\d{1,2}$/.test(val)) {
+      setHoles(prev => { const n = [...prev]; n[idx] = val; return n; });
+      setSaved(false);
+    }
+  }
+
+  function getMatchScore() {
+    const myScores = holes.map(v => { const n = parseInt(v); return isNaN(n) ? null : n; });
+    const oppTeam = myTeam === "team1" ? "team2" : "team1";
+    const oppIndices = myTeam === "team1" ? pair.t2 : pair.t1;
+    let myPts = 0, oppPts = 0, holesPlayed = 0;
+    for (let h = 0; h < 18; h++) {
+      const myTeamIndices = myTeam === "team1" ? pair.t1 : pair.t2;
+      const myTeamScores = myTeamIndices.map(pi => {
+        if (pi === myIdx) return myScores[h];
+        const p = players[myTeam]?.[pi];
+        if (!p) return null;
+        const hs = roundScores?.[p.name]?.[courseId]?.holes;
+        const v = parseInt(hs?.[h]); return isNaN(v) ? null : v;
+      }).filter(v => v !== null);
+      const oppScores = oppIndices.map(pi => {
+        const p = players[oppTeam]?.[pi];
+        if (!p) return null;
+        const hs = roundScores?.[p.name]?.[courseId]?.holes;
+        const v = parseInt(hs?.[h]); return isNaN(v) ? null : v;
+      }).filter(v => v !== null);
+      if (!myTeamScores.length || !oppScores.length) continue;
+      holesPlayed++;
+      const bestMine = Math.min(...myTeamScores), bestOpp = Math.min(...oppScores);
+      if (bestMine < bestOpp) myPts++; else if (bestOpp < bestMine) oppPts++;
+    }
+    return { myPts, oppPts, holesPlayed };
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const cur = (await storageGet()) || { ...DEFAULT_STATE };
+      if (!cur.roundScores) cur.roundScores = {};
+      if (!cur.roundScores[playerName]) cur.roundScores[playerName] = {};
+      const holesNums = holes.map(h => { const n = parseInt(h); return isNaN(n) ? "" : n; });
+      const f9 = holesNums.slice(0, 9), b9 = holesNums.slice(9, 18);
+      const allF = f9.every(v => v !== "" && !isNaN(v)), allB = b9.every(v => v !== "" && !isNaN(v));
+      cur.roundScores[playerName][courseId] = {
+        holes: holesNums,
+        front9: allF ? String(f9.reduce((s, v) => s + v, 0)) : (cur.roundScores[playerName][courseId]?.front9 || ""),
+        back9:  allB ? String(b9.reduce((s, v) => s + v, 0)) : (cur.roundScores[playerName][courseId]?.back9  || ""),
+      };
+      const pairings2 = cur.pairings || state.pairings;
+      const players2  = cur.players  || state.players;
+      pairings2[courseId]?.forEach((p2, mi) => {
+        const inT1 = myTeam === "team1" && p2.t1.includes(myIdx);
+        const inT2 = myTeam === "team2" && p2.t2.includes(myIdx);
+        if (inT1 || inT2) {
+          const { result } = calcMatchPlayHoles(courseId, mi, pairings2, players2, cur.roundScores);
+          if (result) {
+            if (!cur.matches) cur.matches = initMatches();
+            if (cur.matches[courseId]?.[mi]) cur.matches[courseId][mi].result = result;
+          }
+        }
+      });
+      await storageSet(cur);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch(e) { console.error("save hole error:", e); }
+    setSaving(false);
+  }
+
+  const { myPts, oppPts, holesPlayed } = getMatchScore();
+  const HI = (active) => ({
+    width: 28, height: 34, textAlign: "center", fontSize: 14, fontWeight: "bold",
+    background: active ? "rgba(201,168,76,0.15)" : "rgba(0,0,0,0.3)",
+    border: `1px solid ${active ? gold : "rgba(255,255,255,0.1)"}`,
+    borderRadius: 5, color: active ? gold : "rgba(255,255,255,0.4)",
+    padding: 0, fontFamily: "Georgia,serif", outline: "none", boxSizing: "border-box",
+  });
+
+  return (
+    <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 14 }}>
+      <div style={{ fontSize: 10, color: gold, letterSpacing: 2, marginBottom: 10 }}>MY HOLE SCORES</div>
+      {[0, 9].map(start => {
+        const hs = Array.from({ length: 9 }, (_, i) => start + i);
+        const vals = hs.map(h => parseInt(holes[h])).filter(v => !isNaN(v));
+        const sub = vals.length === 9 ? vals.reduce((s, v) => s + v, 0) : null;
+        return (
+          <div key={start} style={{ marginBottom: 8 }}>
+            <div style={{ display: "flex", gap: 2, alignItems: "center", marginBottom: 3 }}>
+              {hs.map(h => (
+                <div key={h} style={{ width: 28, textAlign: "center", fontSize: 8, color: "rgba(255,255,255,0.25)" }}>{h + 1}</div>
+              ))}
+              <div style={{ width: 30, textAlign: "center", fontSize: 8, color: "rgba(255,255,255,0.25)" }}>{start === 0 ? "OUT" : "IN"}</div>
+            </div>
+            <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+              {hs.map(h => (
+                <input key={h} type="text" inputMode="numeric" value={holes[h]} onChange={e => setHole(h, e.target.value)} style={HI(holes[h] !== "")} maxLength={2} />
+              ))}
+              <div style={{ width: 30, textAlign: "center", fontSize: 13, fontWeight: "bold", color: sub !== null ? gold : "rgba(255,255,255,0.2)" }}>
+                {sub !== null ? sub : "—"}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      {holesPlayed > 0 && (
+        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: "10px 14px", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>After {holesPlayed} hole{holesPlayed !== 1 ? "s" : ""}</div>
+          <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 22, fontWeight: "bold", color: myPts > oppPts ? "#4ade80" : myPts < oppPts ? "#f87171" : gold }}>{myPts}</div>
+              <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: 1 }}>YOU</div>
+            </div>
+            <div style={{ color: "rgba(255,255,255,0.2)", fontSize: 14 }}>–</div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 22, fontWeight: "bold", color: oppPts > myPts ? "#f87171" : oppPts < myPts ? "#4ade80" : gold }}>{oppPts}</div>
+              <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: 1 }}>OPP</div>
+            </div>
+          </div>
+        </div>
+      )}
+      <button onClick={save} disabled={saving} style={{ ...BTN(saved ? "#2d8a56" : gold, "#1a3d24"), width: "100%", padding: 12, fontSize: 14 }}>
+        {saving ? "Saving..." : saved ? "✓ Saved!" : "Save Hole Scores"}
+      </button>
+    </div>
   );
 }
 
@@ -936,7 +1127,10 @@ function CaptainView({state, setState, onSwitch}) {
               <div key={course.id} style={CARD}>
                 <div style={{fontSize:10,color:gold,letterSpacing:3}}>{course.day} — ROUND {course.id}</div>
                 <div style={{fontSize:15,fontWeight:"bold",margin:"4px 0 4px"}}>{course.name}</div>
-                <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginBottom:14}}>{course.format}</div>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+                  <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{course.format}</div>
+                  {course.gameType==="matchplay"&&<span style={{fontSize:9,background:"rgba(201,168,76,0.15)",border:"1px solid rgba(201,168,76,0.3)",borderRadius:10,padding:"2px 8px",color:gold,letterSpacing:1}}>MATCH PLAY</span>}
+                </div>
                 {matches[course.id].map((match,mi)=>{
                   const pair=pairings[course.id][mi];
                   const t1n=pair.t1.map(i=>{const p=players.team1[i];return p?`${p.name}${p.handicap?` (${p.handicap})`:""}`:"?";}).join(" & ");
@@ -1167,11 +1361,11 @@ function CaptainView({state, setState, onSwitch}) {
             </div>
             {/* Courses */}
             <div style={{...CARD,background:"rgba(201,168,76,0.06)",border:"1px solid rgba(201,168,76,0.2)",marginBottom:16,marginTop:4}}>
-              <span style={{...SH,marginBottom:12}}>⛳ COURSES</span>
+              <span style={{...SH,marginBottom:12}}>⛳ COURSES & GAME TYPES</span>
               {setupDraft.courseList.map((c,i)=>(
-                <div key={c.id} style={{marginBottom:12}}>
+                <div key={c.id} style={{marginBottom:16,paddingBottom:14,borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
                   <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",letterSpacing:2,marginBottom:5}}>ROUND {c.id}</div>
-                  <div style={{display:"flex",gap:8}}>
+                  <div style={{display:"flex",gap:8,marginBottom:8}}>
                     <input
                       value={c.day}
                       onChange={e=>{const cl=[...setupDraft.courseList];cl[i]={...cl[i],day:e.target.value};draftChange({courseList:cl});}}
@@ -1184,6 +1378,19 @@ function CaptainView({state, setState, onSwitch}) {
                       placeholder="Course name"
                       style={{...IS(gold),flex:1,fontSize:12}}
                     />
+                  </div>
+                  <div>
+                    <label style={{...LBL}}>GAME TYPE</label>
+                    <select
+                      value={c.gameType||"bestball"}
+                      onChange={e=>{const cl=[...setupDraft.courseList];cl[i]={...cl[i],gameType:e.target.value};draftChange({courseList:cl});}}
+                      style={{...IS(c.gameType==="matchplay"?gold:"rgba(255,255,255,0.15)"),fontSize:13,cursor:"pointer",color:c.gameType==="matchplay"?gold:"#fff"}}
+                    >
+                      <option value="bestball">Best Ball (Net)</option>
+                      <option value="singles">Singles (Net)</option>
+                      <option value="matchplay">Match Play</option>
+                    </select>
+                    {c.gameType==="matchplay"&&<div style={{fontSize:11,color:"rgba(201,168,76,0.7)",marginTop:6}}>⛳ Each hole worth 1 point · Ties = 0 · Most holes wins the match</div>}
                   </div>
                 </div>
               ))}
