@@ -863,39 +863,37 @@ function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state }) {
 
   useEffect(() => { setHoles(initHoles()); setSaved(false); }, [matches, courseId, matchIdx]); // eslint-disable-line
 
+  async function saveHoles(newHoles) {
+    setSaving(true);
+    try {
+      const cur = JSON.parse(JSON.stringify(state));
+      if (!cur.matches) cur.matches = initMatches();
+      if (!cur.matches[courseId]) cur.matches[courseId] = [];
+      if (!cur.matches[courseId][matchIdx]) cur.matches[courseId][matchIdx] = { result: null };
+      cur.matches[courseId][matchIdx].holes = newHoles;
+      const t1c = newHoles.filter(h => h === "team1").length;
+      const t2c = newHoles.filter(h => h === "team2").length;
+      const pc  = newHoles.filter(h => h !== null).length;
+      cur.matches[courseId][matchIdx].result = pc === 18 ? (t1c > t2c ? "team1" : t2c > t1c ? "team2" : "half") : null;
+      await storageSet(cur);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch(e) { console.error("save hole error:", e); }
+    setSaving(false);
+  }
+
   function toggleHole(idx) {
     setHoles(prev => {
       const n = [...prev];
       n[idx] = !n[idx] ? "team1" : n[idx] === "team1" ? "team2" : null;
+      saveHoles(n);
       return n;
     });
-    setSaved(false);
   }
 
   const t1 = holes.filter(h => h === "team1").length;
   const t2 = holes.filter(h => h === "team2").length;
   const played = holes.filter(h => h !== null).length;
-
-  async function save() {
-    setSaving(true);
-    try {
-      // Use in-memory state (already fresh from onSnapshot) — avoids a redundant
-      // Firestore read and prevents potential data loss if that read fails.
-      const cur = JSON.parse(JSON.stringify(state));
-      if (!cur.matches) cur.matches = initMatches();
-      if (!cur.matches[courseId]) cur.matches[courseId] = [];
-      if (!cur.matches[courseId][matchIdx]) cur.matches[courseId][matchIdx] = { result: null };
-      cur.matches[courseId][matchIdx].holes = holes;
-      const t1c = holes.filter(h => h === "team1").length;
-      const t2c = holes.filter(h => h === "team2").length;
-      const pc  = holes.filter(h => h !== null).length;
-      cur.matches[courseId][matchIdx].result = pc === 18 ? (t1c > t2c ? "team1" : t2c > t1c ? "team2" : "half") : null;
-      await storageSet(cur);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
-    } catch(e) { console.error("save hole error:", e); }
-    setSaving(false);
-  }
 
   const t1Name = teamNames?.team1 || "TEAM 1";
   const t2Name = teamNames?.team2 || "TEAM 2";
@@ -959,9 +957,9 @@ function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state }) {
           </div>
         </div>
       )}
-      <button onClick={save} disabled={saving} style={{ ...BTN(saved ? "#2d8a56" : gold, "#1a3d24"), width: "100%", padding: 12, fontSize: 14 }}>
-        {saving ? "Saving..." : saved ? "✓ Saved!" : "Save Hole Results"}
-      </button>
+      <div style={{ textAlign:"center", padding:"10px 0", fontSize:12, color: saving?"rgba(255,255,255,0.4)":saved?"#4ade80":"rgba(255,255,255,0.2)", letterSpacing:1 }}>
+        {saving ? "Saving..." : saved ? "✓ Saved" : "Tap holes to score · saves automatically"}
+      </div>
     </div>
   );
 }
