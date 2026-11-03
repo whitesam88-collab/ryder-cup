@@ -335,6 +335,7 @@ function PlayerView({playerName, state, setState, onSwitch}) {
                 matches={matches}
                 teamNames={teamNames}
                 state={state}
+                setState={setState}
               />
             </div>
           );
@@ -851,7 +852,7 @@ function LiveScoresSection({courses, players, roundScores, teamNames}) {
 
 // ─── Hole-by-hole scoring (Match Play) ───────────────────────────────────────
 // Each hole is marked Team 1, Team 2, or unset. Stored in matches[courseId][matchIdx].holes.
-function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state }) {
+function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state, setState }) {
   function initHoles() {
     const existing = matches?.[courseId]?.[matchIdx]?.holes;
     return existing?.length === 18 ? [...existing] : Array(18).fill(null);
@@ -863,32 +864,43 @@ function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state }) {
 
   useEffect(() => { setHoles(initHoles()); setSaved(false); }, [matches, courseId, matchIdx]); // eslint-disable-line
 
-  async function saveHoles(newHoles) {
+  function applyHoles(newHoles) {
+    const t1c = newHoles.filter(h => h === "team1").length;
+    const t2c = newHoles.filter(h => h === "team2").length;
+    const pc  = newHoles.filter(h => h !== null).length;
+    const result = pc === 18 ? (t1c > t2c ? "team1" : t2c > t1c ? "team2" : "half") : null;
+
+    // Update local React state immediately — header re-renders without waiting for Firestore
+    if (setState) {
+      setState(prev => {
+        const m = JSON.parse(JSON.stringify(prev.matches || {}));
+        if (!m[courseId]) m[courseId] = [];
+        if (!m[courseId][matchIdx]) m[courseId][matchIdx] = { result: null };
+        m[courseId][matchIdx].holes = newHoles;
+        m[courseId][matchIdx].result = result;
+        return { ...prev, matches: m };
+      });
+    }
+
+    // Persist to Firestore so all other players see the update
     setSaving(true);
-    try {
-      const cur = JSON.parse(JSON.stringify(state));
-      if (!cur.matches) cur.matches = initMatches();
-      if (!cur.matches[courseId]) cur.matches[courseId] = [];
-      if (!cur.matches[courseId][matchIdx]) cur.matches[courseId][matchIdx] = { result: null };
-      cur.matches[courseId][matchIdx].holes = newHoles;
-      const t1c = newHoles.filter(h => h === "team1").length;
-      const t2c = newHoles.filter(h => h === "team2").length;
-      const pc  = newHoles.filter(h => h !== null).length;
-      cur.matches[courseId][matchIdx].result = pc === 18 ? (t1c > t2c ? "team1" : t2c > t1c ? "team2" : "half") : null;
-      await storageSet(cur);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch(e) { console.error("save hole error:", e); }
-    setSaving(false);
+    const cur = JSON.parse(JSON.stringify(state));
+    if (!cur.matches) cur.matches = initMatches();
+    if (!cur.matches[courseId]) cur.matches[courseId] = [];
+    if (!cur.matches[courseId][matchIdx]) cur.matches[courseId][matchIdx] = { result: null };
+    cur.matches[courseId][matchIdx].holes = newHoles;
+    cur.matches[courseId][matchIdx].result = result;
+    storageSet(cur)
+      .then(() => { setSaved(true); setTimeout(() => setSaved(false), 2000); })
+      .catch(e => console.error("save hole error:", e))
+      .finally(() => setSaving(false));
   }
 
   function toggleHole(idx) {
-    setHoles(prev => {
-      const n = [...prev];
-      n[idx] = !n[idx] ? "team1" : n[idx] === "team1" ? "team2" : null;
-      saveHoles(n);
-      return n;
-    });
+    const n = [...holes];
+    n[idx] = !n[idx] ? "team1" : n[idx] === "team1" ? "team2" : null;
+    setHoles(n);
+    applyHoles(n);
   }
 
   const t1 = holes.filter(h => h === "team1").length;
