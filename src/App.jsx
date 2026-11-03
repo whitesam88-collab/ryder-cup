@@ -206,7 +206,7 @@ function PlayerView({playerName, state, setState, onSwitch}) {
     return res;
   }
 
-  const TABS=[{id:"board",l:"🏆 Board"},{id:"scores",l:"⛳ Scores"},{id:"matches",l:"🏌️ My Matches"},{id:"bets",l:"💰 Bets"}];
+  const TABS=[{id:"board",l:"🏆 Board"},{id:"matches",l:"🏌️ My Matches"},{id:"bets",l:"💰 Bets"}];
   const [openMatch, setOpenMatch] = useState(null); // {course, mi, pair}
   const [expandedRounds, setExpandedRounds] = useState(() => {
     const init={};
@@ -233,9 +233,6 @@ function PlayerView({playerName, state, setState, onSwitch}) {
         ))}
       </div>
       <div style={{padding:16,maxWidth:600,margin:"0 auto"}}>
-
-        {/* SCORES */}
-        {tab==="scores"&&<ScoresTab playerName={playerName} myPlayer={myPlayer} myTeam={myTeam} myIdx={myIdx} state={state}/>}
 
         {/* MY MATCHES */}
         {tab==="matches"&&!openMatch&&(
