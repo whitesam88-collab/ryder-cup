@@ -80,35 +80,8 @@ function calcSettlement(bets, names) {
   return {balances:bal, transactions:txns};
 }
 
-// Per-hole match play: each side wins a hole if their best gross is lower. Most holes won = match win.
-function calcMatchPlayHoles(courseId, matchIdx, pairings, players, roundScores) {
-  const pair = pairings[courseId]?.[matchIdx];
-  if (!pair) return { t1: 0, t2: 0, holesPlayed: 0, result: null };
-  let t1Pts = 0, t2Pts = 0, holesPlayed = 0;
-  for (let h = 0; h < 18; h++) {
-    const getScore = (teamKey, pIdx) => {
-      const p = players[teamKey]?.[pIdx];
-      if (!p) return null;
-      const holes = roundScores?.[p.name]?.[courseId]?.holes;
-      if (!holes) return null;
-      const v = parseInt(holes[h]);
-      return isNaN(v) ? null : v;
-    };
-    const t1s = pair.t1.map(pi => getScore("team1", pi)).filter(v => v !== null);
-    const t2s = pair.t2.map(pi => getScore("team2", pi)).filter(v => v !== null);
-    if (!t1s.length || !t2s.length) continue;
-    holesPlayed++;
-    const b1 = Math.min(...t1s), b2 = Math.min(...t2s);
-    if (b1 < b2) t1Pts++; else if (b2 < b1) t2Pts++;
-  }
-  const result = holesPlayed === 0 ? null : t1Pts > t2Pts ? "team1" : t2Pts > t1Pts ? "team2" : holesPlayed === 18 ? "half" : null;
-  return { t1: t1Pts, t2: t2Pts, holesPlayed, result };
-}
-
 function autoCalcMatch(courseId, matchIdx, pairings, players, roundScores, gameType) {
-  if (gameType === "matchplay") {
-    return calcMatchPlayHoles(courseId, matchIdx, pairings, players, roundScores).result;
-  }
+  if (gameType === "matchplay") return null; // Match play results are set directly via hole-by-hole entry
   const pair = pairings[courseId]?.[matchIdx];
   if (!pair) return null;
   const getNet = (teamKey, pIdx) => {
@@ -277,13 +250,10 @@ function PlayerView({playerName, state, setState, onSwitch}) {
                   </div>
                   {isMatchPlay&&(
                     <HoleScoringSection
-                      playerName={playerName}
                       courseId={course.id}
-                      pair={pair}
-                      players={players}
-                      myTeam={myTeam}
-                      myIdx={myIdx}
-                      roundScores={state.roundScores}
+                      matchIdx={mi}
+                      matches={matches}
+                      teamNames={teamNames}
                       state={state}
                     />
                   )}
@@ -757,81 +727,43 @@ function LiveScoresSection({courses, players, roundScores, teamNames}) {
 }
 
 // ─── Hole-by-hole scoring (Match Play) ───────────────────────────────────────
-function HoleScoringSection({ playerName, courseId, pair, players, myTeam, myIdx, roundScores, state }) {
+// Each hole is marked Team 1, Team 2, or unset. Stored in matches[courseId][matchIdx].holes.
+function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state }) {
   function initHoles() {
-    const existing = roundScores?.[playerName]?.[courseId]?.holes;
-    if (existing?.length === 18) return existing.map(h => (h == null || h === "") ? "" : String(h));
-    return Array(18).fill("");
+    const existing = matches?.[courseId]?.[matchIdx]?.holes;
+    return existing?.length === 18 ? [...existing] : Array(18).fill(null);
   }
 
   const [holes, setHoles] = useState(initHoles);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => { setHoles(initHoles()); setSaved(false); }, [roundScores, playerName, courseId]); // eslint-disable-line
+  useEffect(() => { setHoles(initHoles()); setSaved(false); }, [matches, courseId, matchIdx]); // eslint-disable-line
 
-  function setHole(idx, val) {
-    if (val === "" || /^\d{1,2}$/.test(val)) {
-      setHoles(prev => { const n = [...prev]; n[idx] = val; return n; });
-      setSaved(false);
-    }
+  function toggleHole(idx) {
+    setHoles(prev => {
+      const n = [...prev];
+      n[idx] = !n[idx] ? "team1" : n[idx] === "team1" ? "team2" : null;
+      return n;
+    });
+    setSaved(false);
   }
 
-  function getMatchScore() {
-    const myScores = holes.map(v => { const n = parseInt(v); return isNaN(n) ? null : n; });
-    const oppTeam = myTeam === "team1" ? "team2" : "team1";
-    const oppIndices = myTeam === "team1" ? pair.t2 : pair.t1;
-    let myPts = 0, oppPts = 0, holesPlayed = 0;
-    for (let h = 0; h < 18; h++) {
-      const myTeamIndices = myTeam === "team1" ? pair.t1 : pair.t2;
-      const myTeamScores = myTeamIndices.map(pi => {
-        if (pi === myIdx) return myScores[h];
-        const p = players[myTeam]?.[pi];
-        if (!p) return null;
-        const hs = roundScores?.[p.name]?.[courseId]?.holes;
-        const v = parseInt(hs?.[h]); return isNaN(v) ? null : v;
-      }).filter(v => v !== null);
-      const oppScores = oppIndices.map(pi => {
-        const p = players[oppTeam]?.[pi];
-        if (!p) return null;
-        const hs = roundScores?.[p.name]?.[courseId]?.holes;
-        const v = parseInt(hs?.[h]); return isNaN(v) ? null : v;
-      }).filter(v => v !== null);
-      if (!myTeamScores.length || !oppScores.length) continue;
-      holesPlayed++;
-      const bestMine = Math.min(...myTeamScores), bestOpp = Math.min(...oppScores);
-      if (bestMine < bestOpp) myPts++; else if (bestOpp < bestMine) oppPts++;
-    }
-    return { myPts, oppPts, holesPlayed };
-  }
+  const t1 = holes.filter(h => h === "team1").length;
+  const t2 = holes.filter(h => h === "team2").length;
+  const played = holes.filter(h => h !== null).length;
 
   async function save() {
     setSaving(true);
     try {
       const cur = (await storageGet()) || { ...DEFAULT_STATE };
-      if (!cur.roundScores) cur.roundScores = {};
-      if (!cur.roundScores[playerName]) cur.roundScores[playerName] = {};
-      const holesNums = holes.map(h => { const n = parseInt(h); return isNaN(n) ? "" : n; });
-      const f9 = holesNums.slice(0, 9), b9 = holesNums.slice(9, 18);
-      const allF = f9.every(v => v !== "" && !isNaN(v)), allB = b9.every(v => v !== "" && !isNaN(v));
-      cur.roundScores[playerName][courseId] = {
-        holes: holesNums,
-        front9: allF ? String(f9.reduce((s, v) => s + v, 0)) : (cur.roundScores[playerName][courseId]?.front9 || ""),
-        back9:  allB ? String(b9.reduce((s, v) => s + v, 0)) : (cur.roundScores[playerName][courseId]?.back9  || ""),
-      };
-      const pairings2 = cur.pairings || state.pairings;
-      const players2  = cur.players  || state.players;
-      pairings2[courseId]?.forEach((p2, mi) => {
-        const inT1 = myTeam === "team1" && p2.t1.includes(myIdx);
-        const inT2 = myTeam === "team2" && p2.t2.includes(myIdx);
-        if (inT1 || inT2) {
-          const { result } = calcMatchPlayHoles(courseId, mi, pairings2, players2, cur.roundScores);
-          if (result) {
-            if (!cur.matches) cur.matches = initMatches();
-            if (cur.matches[courseId]?.[mi]) cur.matches[courseId][mi].result = result;
-          }
-        }
-      });
+      if (!cur.matches) cur.matches = initMatches();
+      if (!cur.matches[courseId]?.[matchIdx]) cur.matches[courseId][matchIdx] = { result: null };
+      cur.matches[courseId][matchIdx].holes = holes;
+      const t1c = holes.filter(h => h === "team1").length;
+      const t2c = holes.filter(h => h === "team2").length;
+      const pc  = holes.filter(h => h !== null).length;
+      cur.matches[courseId][matchIdx].result = pc === 0 ? null : t1c > t2c ? "team1" : t2c > t1c ? "team2" : pc === 18 ? "half" : null;
       await storageSet(cur);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -839,59 +771,70 @@ function HoleScoringSection({ playerName, courseId, pair, players, myTeam, myIdx
     setSaving(false);
   }
 
-  const { myPts, oppPts, holesPlayed } = getMatchScore();
-  const HI = (active) => ({
-    width: 28, height: 34, textAlign: "center", fontSize: 14, fontWeight: "bold",
-    background: active ? "rgba(201,168,76,0.15)" : "rgba(0,0,0,0.3)",
-    border: `1px solid ${active ? gold : "rgba(255,255,255,0.1)"}`,
-    borderRadius: 5, color: active ? gold : "rgba(255,255,255,0.4)",
-    padding: 0, fontFamily: "Georgia,serif", outline: "none", boxSizing: "border-box",
-  });
+  const t1Name = teamNames?.team1 || "TEAM 1";
+  const t2Name = teamNames?.team2 || "TEAM 2";
+  const t1c = "#4ade80", t2c = "#f87171";
+
+  function holeBtn(h) {
+    const v = holes[h];
+    return (
+      <button key={h} onClick={() => toggleHole(h)} style={{
+        width: 30, height: 34, border: "none", borderRadius: 5, cursor: "pointer",
+        fontFamily: "Georgia,serif", fontSize: 9, fontWeight: "bold", padding: 0,
+        background: v === "team1" ? "rgba(74,222,128,0.2)" : v === "team2" ? "rgba(248,113,113,0.2)" : "rgba(0,0,0,0.3)",
+        color: v === "team1" ? t1c : v === "team2" ? t2c : "rgba(255,255,255,0.2)",
+        outline: v ? `1px solid ${v === "team1" ? t1c : t2c}` : "1px solid rgba(255,255,255,0.07)",
+      }}>
+        {v === "team1" ? "T1" : v === "team2" ? "T2" : "—"}
+      </button>
+    );
+  }
 
   return (
     <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 14 }}>
-      <div style={{ fontSize: 10, color: gold, letterSpacing: 2, marginBottom: 10 }}>MY HOLE SCORES</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={{ fontSize: 10, color: gold, letterSpacing: 2 }}>HOLE RESULTS</div>
+        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)" }}>tap to cycle: T1 → T2 → clear</div>
+      </div>
       {[0, 9].map(start => {
         const hs = Array.from({ length: 9 }, (_, i) => start + i);
-        const vals = hs.map(h => parseInt(holes[h])).filter(v => !isNaN(v));
-        const sub = vals.length === 9 ? vals.reduce((s, v) => s + v, 0) : null;
+        const sub1 = hs.filter(h => holes[h] === "team1").length;
+        const sub2 = hs.filter(h => holes[h] === "team2").length;
         return (
-          <div key={start} style={{ marginBottom: 8 }}>
-            <div style={{ display: "flex", gap: 2, alignItems: "center", marginBottom: 3 }}>
-              {hs.map(h => (
-                <div key={h} style={{ width: 28, textAlign: "center", fontSize: 8, color: "rgba(255,255,255,0.25)" }}>{h + 1}</div>
-              ))}
-              <div style={{ width: 30, textAlign: "center", fontSize: 8, color: "rgba(255,255,255,0.25)" }}>{start === 0 ? "OUT" : "IN"}</div>
+          <div key={start} style={{ marginBottom: 10 }}>
+            <div style={{ display: "flex", gap: 3, alignItems: "center", marginBottom: 3 }}>
+              {hs.map(h => <div key={h} style={{ width: 30, textAlign: "center", fontSize: 8, color: "rgba(255,255,255,0.25)" }}>{h + 1}</div>)}
+              <div style={{ width: 36, textAlign: "center", fontSize: 8, color: "rgba(255,255,255,0.25)" }}>{start === 0 ? "OUT" : "IN"}</div>
             </div>
-            <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
-              {hs.map(h => (
-                <input key={h} type="text" inputMode="numeric" value={holes[h]} onChange={e => setHole(h, e.target.value)} style={HI(holes[h] !== "")} maxLength={2} />
-              ))}
-              <div style={{ width: 30, textAlign: "center", fontSize: 13, fontWeight: "bold", color: sub !== null ? gold : "rgba(255,255,255,0.2)" }}>
-                {sub !== null ? sub : "—"}
+            <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+              {hs.map(h => holeBtn(h))}
+              <div style={{ width: 36, textAlign: "center", fontSize: 12 }}>
+                <span style={{ color: t1c, fontWeight: "bold" }}>{sub1}</span>
+                <span style={{ color: "rgba(255,255,255,0.2)" }}>–</span>
+                <span style={{ color: t2c, fontWeight: "bold" }}>{sub2}</span>
               </div>
             </div>
           </div>
         );
       })}
-      {holesPlayed > 0 && (
+      {played > 0 && (
         <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: "10px 14px", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>After {holesPlayed} hole{holesPlayed !== 1 ? "s" : ""}</div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>After {played} hole{played !== 1 ? "s" : ""}</div>
           <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
             <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 22, fontWeight: "bold", color: myPts > oppPts ? "#4ade80" : myPts < oppPts ? "#f87171" : gold }}>{myPts}</div>
-              <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: 1 }}>YOU</div>
+              <div style={{ fontSize: 22, fontWeight: "bold", color: t1 > t2 ? t1c : t1 < t2 ? "rgba(255,255,255,0.35)" : gold }}>{t1}</div>
+              <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: 1, maxWidth: 60, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t1Name}</div>
             </div>
             <div style={{ color: "rgba(255,255,255,0.2)", fontSize: 14 }}>–</div>
             <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 22, fontWeight: "bold", color: oppPts > myPts ? "#f87171" : oppPts < myPts ? "#4ade80" : gold }}>{oppPts}</div>
-              <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: 1 }}>OPP</div>
+              <div style={{ fontSize: 22, fontWeight: "bold", color: t2 > t1 ? t2c : t2 < t1 ? "rgba(255,255,255,0.35)" : gold }}>{t2}</div>
+              <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: 1, maxWidth: 60, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t2Name}</div>
             </div>
           </div>
         </div>
       )}
       <button onClick={save} disabled={saving} style={{ ...BTN(saved ? "#2d8a56" : gold, "#1a3d24"), width: "100%", padding: 12, fontSize: 14 }}>
-        {saving ? "Saving..." : saved ? "✓ Saved!" : "Save Hole Scores"}
+        {saving ? "Saving..." : saved ? "✓ Saved!" : "Save Hole Results"}
       </button>
     </div>
   );
