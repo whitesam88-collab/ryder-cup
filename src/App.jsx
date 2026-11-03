@@ -119,7 +119,7 @@ function getMergedCourses(courseList) {
 
 const DEFAULT_STATE = {
   teamNames: {team1:"TEAM 1", team2:"TEAM 2"},
-  players: { team1:[1,2,3,4,5,6].map(n=>mkPlayer(`Player ${n}`)), team2:[7,8,9,10,11,12].map(n=>mkPlayer(`Player ${n}`)) },
+  players: { team1:[1,2,3,4,5,6].map(n=>mkPlayer(`Player ${n}`)), team2:[7,8,9,10,11,12].map(n=>mkPlayer(`Player ${n}`)), pool:[] },
   matches: initMatches(),
   pairings: initPairings(),
   rules: DEFAULT_RULES,
@@ -724,7 +724,7 @@ function CaptainView({state, setState, onSwitch}) {
   const [scorecardThumb,setScorecardThumb]=useState("");
   const [scorecardStatus,setScorecardStatus]=useState("idle");
   const [scorecardMsg,setScorecardMsg]=useState("");
-  const [setupDraft,setSetupDraft]=useState({teamNames,players,rules,courseList});
+  const [setupDraft,setSetupDraft]=useState({teamNames,players:{...players,pool:players.pool||[]},rules,courseList});
   const [setupDirty,setSetupDirty]=useState(false);
 
   const pts=calcPoints(matches);
@@ -745,7 +745,7 @@ function CaptainView({state, setState, onSwitch}) {
 
   // Sync setup draft from Firestore updates only when not editing
   useEffect(() => {
-    if (!setupDirty) setSetupDraft({ teamNames, players, rules, courseList });
+    if (!setupDirty) setSetupDraft({ teamNames, players: { ...players, pool: players.pool || [] }, rules, courseList });
   }, [state]); // eslint-disable-line
 
   function draftChange(patch) {
@@ -758,16 +758,25 @@ function CaptainView({state, setState, onSwitch}) {
     setSetupDirty(false);
   }
 
-  function updDraftPlayer(team, idx, field, val) {
+  function updDraftPlayer(group, idx, field, val) {
     const p = JSON.parse(JSON.stringify(setupDraft.players));
-    p[team][idx][field] = val;
+    if (!p[group]) p[group] = [];
+    p[group][idx][field] = val;
     draftChange({ players: p });
   }
 
-  function removeDraftPlayer(team, idx) {
-    if (setupDraft.players[team].length <= 1) return;
+  function removeDraftPlayer(group, idx) {
     const p = JSON.parse(JSON.stringify(setupDraft.players));
-    p[team].splice(idx, 1);
+    p[group].splice(idx, 1);
+    draftChange({ players: p });
+  }
+
+  function moveDraftPlayer(fromGroup, fromIdx, toGroup) {
+    if (fromGroup === toGroup) return;
+    const p = JSON.parse(JSON.stringify(setupDraft.players));
+    const [player] = p[fromGroup].splice(fromIdx, 1);
+    if (!p[toGroup]) p[toGroup] = [];
+    p[toGroup].push(player);
     draftChange({ players: p });
   }
 
@@ -795,7 +804,8 @@ function CaptainView({state, setState, onSwitch}) {
   function addPlayer(){
     if(!newPName.trim())return;
     const p=JSON.parse(JSON.stringify(setupDraft.players));
-    p[addPlayerModal.team].push({name:newPName.trim(),handicap:newPHdcp?String(Math.round(parseFloat(newPHdcp)||0)):""});
+    if(!p.pool)p.pool=[];
+    p.pool.push({name:newPName.trim(),handicap:newPHdcp?String(Math.round(parseFloat(newPHdcp)||0)):""});
     draftChange({players:p});
     setAddPlayerModal(null);setNewPName("");setNewPHdcp("");setScanThumb("");
   }
@@ -1047,28 +1057,95 @@ function CaptainView({state, setState, onSwitch}) {
               </button>
             </div>
             {setupDirty&&<div style={{background:"rgba(201,168,76,0.08)",border:"1px solid rgba(201,168,76,0.25)",borderRadius:8,padding:"9px 14px",marginBottom:14,fontSize:11,color:gold}}>⚠ Unsaved changes — tap Save Changes to publish to all players.</div>}
+
+            {/* Team names */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
               {["team1","team2"].map(team=>(
-                <div key={team} style={{...CARD,marginBottom:0,border:`1px solid ${team==="team1"?"rgba(74,222,128,0.3)":"rgba(248,113,113,0.3)"}`}}>
-                  <div style={{marginBottom:12}}>
-                    <label style={LBL}>TEAM NAME</label>
-                    <input value={setupDraft.teamNames[team]} onChange={e=>draftChange({teamNames:{...setupDraft.teamNames,[team]:e.target.value}})} style={IS(team==="team1"?"#2d8a56":"#cc4444")}/>
-                  </div>
-                  <label style={LBL}>PLAYERS & HANDICAPS</label>
-                  {setupDraft.players[team].map((player,i)=>(
-                    <div key={i} style={{display:"flex",alignItems:"flex-start",gap:6,marginBottom:8}}>
-                      <span style={{fontSize:11,color:"rgba(255,255,255,0.3)",minWidth:14,paddingTop:10}}>{i+1}</span>
-                      <div style={{flex:1,minWidth:0}}>
-                        <input value={player.name} onChange={e=>updDraftPlayer(team,i,"name",e.target.value)} placeholder="Name" style={{...IS(),marginBottom:4,fontSize:13}}/>
-                        <input value={player.handicap} onChange={e=>updDraftPlayer(team,i,"handicap",e.target.value)} onBlur={e=>{const v=parseFloat(e.target.value);if(!isNaN(v))updDraftPlayer(team,i,"handicap",String(Math.round(v)));}} placeholder="Handicap" style={{...IS(player.handicap?gold:"rgba(255,255,255,0.1)"),fontSize:13,color:player.handicap?gold:"#fff"}}/>
-                      </div>
-                      <button onClick={()=>removeDraftPlayer(team,i)} style={{background:"rgba(255,255,255,0.06)",border:"none",color:"rgba(255,255,255,0.3)",borderRadius:4,padding:"5px 7px",cursor:"pointer",fontSize:11,flexShrink:0,marginTop:2}}>✕</button>
-                    </div>
-                  ))}
-                  <button onClick={()=>{setAddPlayerModal({team});setNewPName("");setNewPHdcp("");setScanThumb("");}} style={{marginTop:6,width:"100%",padding:"9px",background:"rgba(201,168,76,0.07)",border:`1px dashed rgba(201,168,76,0.35)`,color:gold,borderRadius:6,cursor:"pointer",fontFamily:"Georgia,serif",fontSize:13}}>+ Add Player</button>
+                <div key={team}>
+                  <label style={{...LBL,color:team==="team1"?"rgba(74,222,128,0.6)":"rgba(248,113,113,0.6)"}}>TEAM {team==="team1"?"1":"2"} NAME</label>
+                  <input value={setupDraft.teamNames[team]} onChange={e=>draftChange({teamNames:{...setupDraft.teamNames,[team]:e.target.value}})} style={IS(team==="team1"?"#2d8a56":"#cc4444")}/>
                 </div>
               ))}
             </div>
+
+            {/* Player roster */}
+            {(()=>{
+              const dp=setupDraft.players;
+              const total=(dp.team1?.length||0)+(dp.team2?.length||0)+(dp.pool?.length||0);
+              const allRows=[
+                ...(dp.pool||[]).map((p,i)=>({p,group:"pool",i})),
+                ...(dp.team1||[]).map((p,i)=>({p,group:"team1",i})),
+                ...(dp.team2||[]).map((p,i)=>({p,group:"team2",i})),
+              ];
+              return (
+                <div style={{...CARD,marginBottom:20}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                    <span style={{...SH,marginBottom:0}}>PLAYERS ({total})</span>
+                    <div style={{display:"flex",gap:10,fontSize:10,color:"rgba(255,255,255,0.35)"}}>
+                      <span style={{color:"rgba(74,222,128,0.7)"}}>T1: {dp.team1?.length||0}</span>
+                      <span style={{color:"rgba(248,113,113,0.7)"}}>T2: {dp.team2?.length||0}</span>
+                      {(dp.pool?.length||0)>0&&<span>Pool: {dp.pool.length}</span>}
+                    </div>
+                  </div>
+
+                  {/* Column headers */}
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,paddingBottom:6,borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
+                    <div style={{flex:1,fontSize:9,color:"rgba(255,255,255,0.25)",letterSpacing:2}}>NAME / HCP</div>
+                    <div style={{display:"flex",gap:4,fontSize:9,letterSpacing:1}}>
+                      <span style={{width:34,textAlign:"center",color:"rgba(255,255,255,0.3)"}}>POOL</span>
+                      <span style={{width:34,textAlign:"center",color:"rgba(74,222,128,0.5)"}}>T1</span>
+                      <span style={{width:34,textAlign:"center",color:"rgba(248,113,113,0.5)"}}>T2</span>
+                    </div>
+                    <div style={{width:24}}/>
+                  </div>
+
+                  {allRows.length===0&&<div style={{color:"rgba(255,255,255,0.3)",fontSize:13,textAlign:"center",padding:"16px 0"}}>No players yet — tap + Add Player below.</div>}
+
+                  {allRows.map(({p,group,i})=>(
+                    <div key={`${group}-${i}`} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <input
+                          value={p.name}
+                          onChange={e=>updDraftPlayer(group,i,"name",e.target.value)}
+                          placeholder="Name"
+                          style={{...IS(),fontSize:13,padding:"7px 10px",marginBottom:4}}
+                        />
+                        <input
+                          value={p.handicap}
+                          onChange={e=>updDraftPlayer(group,i,"handicap",e.target.value)}
+                          onBlur={e=>{const v=parseFloat(e.target.value);if(!isNaN(v))updDraftPlayer(group,i,"handicap",String(Math.round(v)));}}
+                          placeholder="HCP"
+                          style={{...IS(p.handicap?gold:"rgba(255,255,255,0.1)"),fontSize:12,padding:"5px 10px",color:p.handicap?gold:"#fff"}}
+                        />
+                      </div>
+                      {/* Team assignment strip */}
+                      <div style={{display:"flex",gap:4,flexShrink:0}}>
+                        {[
+                          {g:"pool",  label:"—",  bg:"rgba(255,255,255,0.08)", activeBg:"rgba(255,255,255,0.22)", color:"rgba(255,255,255,0.4)",  activeColor:"#fff"},
+                          {g:"team1", label:"T1", bg:"rgba(26,92,56,0.25)",   activeBg:"#2d8a56",               color:"rgba(74,222,128,0.45)",  activeColor:"#fff"},
+                          {g:"team2", label:"T2", bg:"rgba(122,26,26,0.25)",  activeBg:"#cc4444",               color:"rgba(248,113,113,0.45)", activeColor:"#fff"},
+                        ].map(({g,label,bg,activeBg,color,activeColor})=>(
+                          <button
+                            key={g}
+                            onClick={()=>moveDraftPlayer(group,i,g)}
+                            style={{
+                              width:34,padding:"6px 2px",border:"none",borderRadius:6,cursor:"pointer",
+                              fontFamily:"Georgia,serif",fontSize:10,fontWeight:group===g?"bold":"normal",
+                              background:group===g?activeBg:bg,
+                              color:group===g?activeColor:color,
+                              outline:group===g?"2px solid rgba(255,255,255,0.2)":"none",
+                            }}
+                          >{label}</button>
+                        ))}
+                      </div>
+                      <button onClick={()=>removeDraftPlayer(group,i)} style={{width:24,height:24,background:"rgba(255,255,255,0.06)",border:"none",color:"rgba(255,255,255,0.25)",borderRadius:4,cursor:"pointer",fontSize:12,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                    </div>
+                  ))}
+
+                  <button onClick={()=>{setAddPlayerModal(true);setNewPName("");setNewPHdcp("");setScanThumb("");}} style={{marginTop:14,width:"100%",padding:"10px",background:"rgba(201,168,76,0.07)",border:`1px dashed rgba(201,168,76,0.35)`,color:gold,borderRadius:6,cursor:"pointer",fontFamily:"Georgia,serif",fontSize:13}}>+ Add Player</button>
+                </div>
+              );
+            })()}
             {/* Rules */}
             <div style={{...CARD,background:"rgba(201,168,76,0.06)",border:"1px solid rgba(201,168,76,0.2)",marginBottom:16}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
@@ -1155,8 +1232,8 @@ function CaptainView({state, setState, onSwitch}) {
       {addPlayerModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:200}}>
           <div style={{background:"#152e1d",border:`1px solid ${gold}`,borderRadius:"16px 16px 0 0",padding:24,width:"100%",maxWidth:500}}>
-            <div style={{fontSize:14,fontWeight:"bold",color:gold,marginBottom:4}}>ADD PLAYER — {teamNames[addPlayerModal.team]}</div>
-            <div style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginBottom:18}}>Open your Grint app to find your name and handicap.</div>
+            <div style={{fontSize:14,fontWeight:"bold",color:gold,marginBottom:4}}>ADD PLAYER TO ROSTER</div>
+            <div style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginBottom:18}}>Player will be added unassigned — assign to a team from the roster list.</div>
             <label style={{display:"block",marginBottom:14}}>
               <div style={LBL}>OPTIONAL: CARD PHOTO FOR REFERENCE</div>
               <div style={{minHeight:scanThumb?"auto":52,border:"1px dashed rgba(255,255,255,0.2)",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",background:"rgba(0,0,0,0.2)",cursor:"pointer"}}>
