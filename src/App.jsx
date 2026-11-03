@@ -208,6 +208,12 @@ function PlayerView({playerName, state, setState, onSwitch}) {
 
   const TABS=[{id:"board",l:"🏆 Board"},{id:"scores",l:"⛳ Scores"},{id:"matches",l:"🏌️ My Matches"},{id:"bets",l:"💰 Bets"}];
   const [openMatch, setOpenMatch] = useState(null); // {course, mi, pair}
+  const [expandedRounds, setExpandedRounds] = useState(() => {
+    const init={};
+    courses.forEach(c=>{ init[c.id]=true; });
+    return init;
+  });
+  function toggleRound(id){ setExpandedRounds(prev=>({...prev,[id]:!prev[id]})); }
 
   return (
     <div style={{minHeight:"100vh",background:BG,fontFamily:"Georgia,serif",color:"#fff"}}>
@@ -364,20 +370,24 @@ function PlayerView({playerName, state, setState, onSwitch}) {
               const isMatchPlay=course.gameType==="matchplay";
               const coursePairings=pairings[course.id]||[];
               const gtLabel=isMatchPlay?"MATCH PLAY":course.gameType==="singles"?"SINGLES":"BEST BALL";
+              const expanded=expandedRounds[course.id]!==false;
               return (
                 <div key={course.id} style={{...CARD,padding:"12px 16px"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:coursePairings.length?10:0}}>
+                  <div onClick={()=>toggleRound(course.id)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:expanded&&coursePairings.length?10:0,cursor:"pointer",userSelect:"none"}}>
                     <div>
                       <div style={{fontSize:10,color:gold,letterSpacing:2,marginBottom:2}}>{course.day}</div>
                       <div style={{fontSize:12,color:"rgba(255,255,255,0.7)"}}>{course.name}</div>
                       <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",letterSpacing:1,marginTop:2}}>{gtLabel}</div>
                     </div>
-                    <div style={{textAlign:"right"}}>
-                      <div style={{fontSize:20,fontWeight:"bold"}}><span style={{color:"#4ade80"}}>{r1}</span><span style={{color:"rgba(255,255,255,0.25)",margin:"0 6px"}}>–</span><span style={{color:"#f87171"}}>{r2}</span></div>
-                      <div style={{fontSize:9,color:"rgba(255,255,255,0.3)"}}>pts</div>
+                    <div style={{display:"flex",alignItems:"center",gap:12}}>
+                      <div style={{textAlign:"right"}}>
+                        <div style={{fontSize:20,fontWeight:"bold"}}><span style={{color:"#4ade80"}}>{r1}</span><span style={{color:"rgba(255,255,255,0.25)",margin:"0 6px"}}>–</span><span style={{color:"#f87171"}}>{r2}</span></div>
+                        <div style={{fontSize:9,color:"rgba(255,255,255,0.3)"}}>pts</div>
+                      </div>
+                      <span style={{fontSize:16,color:"rgba(255,255,255,0.3)",transition:"transform 0.2s",display:"inline-block",transform:expanded?"rotate(90deg)":"rotate(0deg)"}}>›</span>
                     </div>
                   </div>
-                  {coursePairings.map((pair,mi)=>{
+                  {expanded&&coursePairings.map((pair,mi)=>{
                     const t1n=pair.t1.map(j=>players.team1[j]?.name).filter(Boolean).join(" & ")||"TBD";
                     const t2n=pair.t2.map(j=>players.team2[j]?.name).filter(Boolean).join(" & ")||"TBD";
                     const ls=getMatchLiveStatus(course.id,mi,matches);
