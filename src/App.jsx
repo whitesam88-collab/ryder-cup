@@ -363,42 +363,55 @@ function PlayerView({playerName, state, setState, onSwitch}) {
               rm.forEach(m=>{if(m.result==="team1")r1++;else if(m.result==="team2")r2++;else if(m.result==="half"){r1+=0.5;r2+=0.5;}});
               const isMatchPlay=course.gameType==="matchplay";
               const coursePairings=pairings[course.id]||[];
+              const gtLabel=isMatchPlay?"MATCH PLAY":course.gameType==="singles"?"SINGLES":"BEST BALL";
               return (
                 <div key={course.id} style={{...CARD,padding:"12px 16px"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:isMatchPlay&&coursePairings.length?8:0}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:coursePairings.length?10:0}}>
                     <div>
                       <div style={{fontSize:10,color:gold,letterSpacing:2,marginBottom:2}}>{course.day}</div>
                       <div style={{fontSize:12,color:"rgba(255,255,255,0.7)"}}>{course.name}</div>
+                      <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",letterSpacing:1,marginTop:2}}>{gtLabel}</div>
                     </div>
                     <div style={{textAlign:"right"}}>
-                      <div style={{fontSize:16,fontWeight:"bold"}}><span style={{color:"#4ade80"}}>{r1}</span><span style={{color:"rgba(255,255,255,0.25)",margin:"0 6px"}}>–</span><span style={{color:"#f87171"}}>{r2}</span></div>
-                      {isMatchPlay&&<div style={{fontSize:9,color:"rgba(255,255,255,0.3)",letterSpacing:1}}>MATCH PLAY</div>}
+                      <div style={{fontSize:20,fontWeight:"bold"}}><span style={{color:"#4ade80"}}>{r1}</span><span style={{color:"rgba(255,255,255,0.25)",margin:"0 6px"}}>–</span><span style={{color:"#f87171"}}>{r2}</span></div>
+                      <div style={{fontSize:9,color:"rgba(255,255,255,0.3)"}}>pts</div>
                     </div>
                   </div>
-                  {isMatchPlay&&coursePairings.map((pair,mi)=>{
+                  {coursePairings.map((pair,mi)=>{
                     const t1n=pair.t1.map(j=>players.team1[j]?.name).filter(Boolean).join(" & ")||"TBD";
                     const t2n=pair.t2.map(j=>players.team2[j]?.name).filter(Boolean).join(" & ")||"TBD";
-                    const ls=getMatchLiveStatus(course.id,mi,matches);
-                    let liveText,liveColor;
-                    if(ls.state==="not_started"){ liveText="Not started"; liveColor="rgba(255,255,255,0.25)"; }
-                    else if(ls.state==="in_progress"){
-                      const lead=ls.t1>ls.t2?teamNames.team1:ls.t2>ls.t1?teamNames.team2:null;
-                      liveText=lead?`${lead} leads ${ls.t1}–${ls.t2} (${ls.played} holes)`:`All Square (${ls.played} holes)`;
-                      liveColor=ls.t1>ls.t2?"#4ade80":ls.t2>ls.t1?"#f87171":gold;
+                    let liveText,liveColor,liveDot;
+                    if(isMatchPlay){
+                      const ls=getMatchLiveStatus(course.id,mi,matches);
+                      if(ls.state==="not_started"){ liveText="Not started"; liveColor="rgba(255,255,255,0.25)"; liveDot=false; }
+                      else if(ls.state==="in_progress"){
+                        const lead=ls.t1>ls.t2?teamNames.team1:ls.t2>ls.t1?teamNames.team2:null;
+                        liveText=lead?`${lead} ${ls.t1}–${ls.t2} thru ${ls.played}`:`All Square thru ${ls.played}`;
+                        liveColor=ls.t1>ls.t2?"#4ade80":ls.t2>ls.t1?"#f87171":gold; liveDot=true;
+                      } else {
+                        const winner=ls.result==="team1"?teamNames.team1:ls.result==="team2"?teamNames.team2:null;
+                        liveText=winner?`${winner} wins ${ls.t1}–${ls.t2}`:"Halved";
+                        liveColor=ls.result==="team1"?"#4ade80":ls.result==="team2"?"#f87171":gold; liveDot=false;
+                      }
                     } else {
-                      const winner=ls.result==="team1"?teamNames.team1:ls.result==="team2"?teamNames.team2:null;
-                      liveText=winner?`${winner} wins ${ls.t1}–${ls.t2}`:"Halved";
-                      liveColor=ls.result==="team1"?"#4ade80":ls.result==="team2"?"#f87171":gold;
+                      const mr=matches[course.id]?.[mi]?.result;
+                      if(!mr){ liveText="Pending"; liveColor="rgba(255,255,255,0.25)"; liveDot=false; }
+                      else if(mr==="team1"){ liveText=`${teamNames.team1} wins`; liveColor="#4ade80"; liveDot=false; }
+                      else if(mr==="team2"){ liveText=`${teamNames.team2} wins`; liveColor="#f87171"; liveDot=false; }
+                      else { liveText="Halved"; liveColor=gold; liveDot=false; }
                     }
                     return (
-                      <div key={mi} style={{borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:8,marginTop:mi===0?4:8}}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                          <div style={{fontSize:11}}>
+                      <div key={mi} style={{borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:8,marginTop:mi===0?0:6}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                          <div style={{fontSize:11,minWidth:0,flex:1}}>
                             <span style={{color:"#4ade80"}}>{t1n}</span>
-                            <span style={{color:"rgba(255,255,255,0.25)",margin:"0 6px"}}>vs</span>
+                            <span style={{color:"rgba(255,255,255,0.2)",margin:"0 5px"}}>vs</span>
                             <span style={{color:"#f87171"}}>{t2n}</span>
                           </div>
-                          <div style={{fontSize:11,fontWeight:"bold",color:liveColor,textAlign:"right",maxWidth:160}}>{liveText}</div>
+                          <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
+                            {liveDot&&<span style={{width:6,height:6,borderRadius:"50%",background:liveColor,display:"inline-block",animation:"pulse 1.5s infinite"}}/>}
+                            <span style={{fontSize:11,fontWeight:"bold",color:liveColor}}>{liveText}</span>
+                          </div>
                         </div>
                       </div>
                     );
@@ -406,6 +419,7 @@ function PlayerView({playerName, state, setState, onSwitch}) {
                 </div>
               );
             })}
+            <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
             <LiveScoresSection courses={courses} players={players} roundScores={state.roundScores} teamNames={teamNames}/>
           </div>
         )}
