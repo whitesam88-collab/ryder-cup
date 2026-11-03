@@ -197,6 +197,7 @@ function PlayerView({playerName, state, setState, onSwitch}) {
   }
 
   const TABS=[{id:"board",l:"🏆 Board"},{id:"scores",l:"⛳ Scores"},{id:"matches",l:"🏌️ My Matches"},{id:"bets",l:"💰 Bets"}];
+  const [openMatch, setOpenMatch] = useState(null); // {course, mi, pair}
 
   return (
     <div style={{minHeight:"100vh",background:BG,fontFamily:"Georgia,serif",color:"#fff"}}>
@@ -212,7 +213,7 @@ function PlayerView({playerName, state, setState, onSwitch}) {
       {/* Tabs */}
       <div style={{display:"flex",borderBottom:"1px solid rgba(255,255,255,0.1)",background:"rgba(0,0,0,0.3)",overflowX:"auto"}}>
         {TABS.map(t=>(
-          <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:"12px 4px",border:"none",cursor:"pointer",fontFamily:"Georgia,serif",fontSize:10,whiteSpace:"nowrap",background:"transparent",color:tab===t.id?gold:"rgba(255,255,255,0.4)",borderBottom:tab===t.id?`2px solid ${gold}`:"2px solid transparent"}}>{t.l}</button>
+          <button key={t.id} onClick={()=>{setTab(t.id);if(t.id!=="matches")setOpenMatch(null);}} style={{flex:1,padding:"12px 4px",border:"none",cursor:"pointer",fontFamily:"Georgia,serif",fontSize:10,whiteSpace:"nowrap",background:"transparent",color:tab===t.id?gold:"rgba(255,255,255,0.4)",borderBottom:tab===t.id?`2px solid ${gold}`:"2px solid transparent"}}>{t.l}</button>
         ))}
       </div>
       <div style={{padding:16,maxWidth:600,margin:"0 auto"}}>
@@ -221,7 +222,7 @@ function PlayerView({playerName, state, setState, onSwitch}) {
         {tab==="scores"&&<ScoresTab playerName={playerName} myPlayer={myPlayer} myTeam={myTeam} myIdx={myIdx} state={state}/>}
 
         {/* MY MATCHES */}
-        {tab==="matches"&&(
+        {tab==="matches"&&!openMatch&&(
           <div>
             <span style={SH}>MY MATCH RESULTS</span>
             {getMyMatches().length===0&&<div style={{color:"rgba(255,255,255,0.4)",fontSize:13}}>No matches assigned yet.</div>}
@@ -234,34 +235,82 @@ function PlayerView({playerName, state, setState, onSwitch}) {
               const lost=(result==="team1"&&myTeam==="team2")||(result==="team2"&&myTeam==="team1");
               const halved=result==="half";
               const isMatchPlay=course.gameType==="matchplay";
+              const holes=matches[course.id]?.[mi]?.holes||[];
+              const t1h=holes.filter(h=>h==="team1").length;
+              const t2h=holes.filter(h=>h==="team2").length;
+              const played=holes.filter(h=>h!==null).length;
               return (
-                <div key={i} style={{...CARD,borderLeft:`3px solid ${won?"#4ade80":lost?"#f87171":halved?gold:"rgba(255,255,255,0.1)"}`}}>
+                <div key={i} onClick={()=>setOpenMatch({course,mi,pair,t1n,t2n})}
+                  style={{...CARD,borderLeft:`3px solid ${won?"#4ade80":lost?"#f87171":halved?gold:"rgba(255,255,255,0.1)"}`,cursor:"pointer",transition:"background 0.15s"}}
+                  onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.07)"}
+                  onMouseLeave={e=>e.currentTarget.style.background=CARD.background||"rgba(255,255,255,0.04)"}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
                     <div style={{fontSize:10,color:gold,letterSpacing:2}}>{course.day} — {course.name}</div>
-                    {isMatchPlay&&<span style={{fontSize:9,background:"rgba(201,168,76,0.15)",border:`1px solid rgba(201,168,76,0.3)`,borderRadius:10,padding:"2px 8px",color:gold,letterSpacing:1}}>MATCH PLAY</span>}
+                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                      {isMatchPlay&&<span style={{fontSize:9,background:"rgba(201,168,76,0.15)",border:`1px solid rgba(201,168,76,0.3)`,borderRadius:10,padding:"2px 8px",color:gold,letterSpacing:1}}>MATCH PLAY</span>}
+                      <span style={{color:"rgba(255,255,255,0.3)",fontSize:16}}>›</span>
+                    </div>
                   </div>
                   <div style={{fontSize:13,marginBottom:10}}>
                     <span style={{color:"#4ade80"}}>{myNames}</span>
                     <span style={{color:"rgba(255,255,255,0.3)",margin:"0 8px"}}>vs</span>
                     <span style={{color:"#f87171"}}>{oppNames}</span>
                   </div>
-                  <div style={{fontSize:20,fontWeight:"bold",color:won?"#4ade80":lost?"#f87171":halved?gold:"rgba(255,255,255,0.3)"}}>
-                    {won?"✓ WIN":lost?"✕ LOSS":halved?"½ HALVED":"⏳ Pending"}
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div style={{fontSize:20,fontWeight:"bold",color:won?"#4ade80":lost?"#f87171":halved?gold:"rgba(255,255,255,0.3)"}}>
+                      {won?"✓ WIN":lost?"✕ LOSS":halved?"½ HALVED":"⏳ Pending"}
+                    </div>
+                    {isMatchPlay&&played>0&&(
+                      <div style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>
+                        <span style={{color:"#4ade80"}}>{t1h}</span>
+                        <span style={{color:"rgba(255,255,255,0.2)"}}> – </span>
+                        <span style={{color:"#f87171"}}>{t2h}</span>
+                        <span style={{color:"rgba(255,255,255,0.25)",fontSize:10}}> ({played} holes)</span>
+                      </div>
+                    )}
                   </div>
-                  {isMatchPlay&&(
-                    <HoleScoringSection
-                      courseId={course.id}
-                      matchIdx={mi}
-                      matches={matches}
-                      teamNames={teamNames}
-                      state={state}
-                    />
-                  )}
                 </div>
               );
             })}
           </div>
         )}
+
+        {/* MATCH SCORECARD DETAIL */}
+        {tab==="matches"&&openMatch&&(()=>{
+          const {course,mi,pair,t1n,t2n}=openMatch;
+          const result=matches[course.id]?.[mi]?.result;
+          const myNames=myTeam==="team1"?t1n:t2n;
+          const oppNames=myTeam==="team1"?t2n:t1n;
+          const won=(result==="team1"&&myTeam==="team1")||(result==="team2"&&myTeam==="team2");
+          const lost=(result==="team1"&&myTeam==="team2")||(result==="team2"&&myTeam==="team1");
+          const halved=result==="half";
+          return (
+            <div>
+              <button onClick={()=>setOpenMatch(null)} style={{...BTN("rgba(255,255,255,0.08)"),fontSize:12,padding:"7px 14px",marginBottom:14}}>← Back</button>
+              <div style={{...CARD,borderLeft:`3px solid ${won?"#4ade80":lost?"#f87171":halved?gold:"rgba(255,255,255,0.1)"}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+                  <div style={{fontSize:10,color:gold,letterSpacing:2}}>{course.day} — {course.name}</div>
+                  <span style={{fontSize:9,background:"rgba(201,168,76,0.15)",border:`1px solid rgba(201,168,76,0.3)`,borderRadius:10,padding:"2px 8px",color:gold,letterSpacing:1}}>MATCH PLAY</span>
+                </div>
+                <div style={{fontSize:13,marginBottom:8}}>
+                  <span style={{color:"#4ade80"}}>{myNames}</span>
+                  <span style={{color:"rgba(255,255,255,0.3)",margin:"0 8px"}}>vs</span>
+                  <span style={{color:"#f87171"}}>{oppNames}</span>
+                </div>
+                <div style={{fontSize:18,fontWeight:"bold",marginBottom:4,color:won?"#4ade80":lost?"#f87171":halved?gold:"rgba(255,255,255,0.3)"}}>
+                  {won?"✓ WIN":lost?"✕ LOSS":halved?"½ HALVED":"⏳ Pending"}
+                </div>
+              </div>
+              <HoleScoringSection
+                courseId={course.id}
+                matchIdx={mi}
+                matches={matches}
+                teamNames={teamNames}
+                state={state}
+              />
+            </div>
+          );
+        })()}
 
         {/* BOARD */}
         {tab==="board"&&(
@@ -779,9 +828,9 @@ function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state }) {
     const v = holes[h];
     return (
       <button key={h} onClick={() => toggleHole(h)} style={{
-        width: 30, height: 34, border: "none", borderRadius: 5, cursor: "pointer",
-        fontFamily: "Georgia,serif", fontSize: 9, fontWeight: "bold", padding: 0,
-        background: v === "team1" ? "rgba(74,222,128,0.2)" : v === "team2" ? "rgba(248,113,113,0.2)" : "rgba(0,0,0,0.3)",
+        flex: 1, minWidth: 0, height: 44, border: "none", borderRadius: 6, cursor: "pointer",
+        fontFamily: "Georgia,serif", fontSize: 11, fontWeight: "bold", padding: 0,
+        background: v === "team1" ? "rgba(74,222,128,0.25)" : v === "team2" ? "rgba(248,113,113,0.25)" : "rgba(0,0,0,0.35)",
         color: v === "team1" ? t1c : v === "team2" ? t2c : "rgba(255,255,255,0.2)",
         outline: v ? `1px solid ${v === "team1" ? t1c : t2c}` : "1px solid rgba(255,255,255,0.07)",
       }}>
@@ -791,24 +840,24 @@ function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state }) {
   }
 
   return (
-    <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 14 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <div style={{ fontSize: 10, color: gold, letterSpacing: 2 }}>HOLE RESULTS</div>
-        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)" }}>tap to cycle: T1 → T2 → clear</div>
+    <div style={{ marginTop: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ fontSize: 11, color: gold, letterSpacing: 2, fontWeight: "bold" }}>SCORECARD</div>
+        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)" }}>tap hole to cycle: T1 → T2 → clear</div>
       </div>
       {[0, 9].map(start => {
         const hs = Array.from({ length: 9 }, (_, i) => start + i);
         const sub1 = hs.filter(h => holes[h] === "team1").length;
         const sub2 = hs.filter(h => holes[h] === "team2").length;
         return (
-          <div key={start} style={{ marginBottom: 10 }}>
-            <div style={{ display: "flex", gap: 3, alignItems: "center", marginBottom: 3 }}>
-              {hs.map(h => <div key={h} style={{ width: 30, textAlign: "center", fontSize: 8, color: "rgba(255,255,255,0.25)" }}>{h + 1}</div>)}
-              <div style={{ width: 36, textAlign: "center", fontSize: 8, color: "rgba(255,255,255,0.25)" }}>{start === 0 ? "OUT" : "IN"}</div>
+          <div key={start} style={{ marginBottom: 14, background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: "10px 10px 12px" }}>
+            <div style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 4 }}>
+              {hs.map(h => <div key={h} style={{ flex: 1, minWidth: 0, textAlign: "center", fontSize: 9, color: "rgba(255,255,255,0.3)" }}>{h + 1}</div>)}
+              <div style={{ width: 38, textAlign: "center", fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: 1 }}>{start === 0 ? "OUT" : "IN"}</div>
             </div>
-            <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
               {hs.map(h => holeBtn(h))}
-              <div style={{ width: 36, textAlign: "center", fontSize: 12 }}>
+              <div style={{ width: 38, textAlign: "center", fontSize: 13 }}>
                 <span style={{ color: t1c, fontWeight: "bold" }}>{sub1}</span>
                 <span style={{ color: "rgba(255,255,255,0.2)" }}>–</span>
                 <span style={{ color: t2c, fontWeight: "bold" }}>{sub2}</span>
