@@ -724,6 +724,8 @@ function CaptainView({state, setState, onSwitch}) {
   const [scorecardThumb,setScorecardThumb]=useState("");
   const [scorecardStatus,setScorecardStatus]=useState("idle");
   const [scorecardMsg,setScorecardMsg]=useState("");
+  const [setupDraft,setSetupDraft]=useState({teamNames,players,rules,courseList});
+  const [setupDirty,setSetupDirty]=useState(false);
 
   const pts=calcPoints(matches);
   const winner=pts.team1>=8?"team1":pts.team2>=8?"team2":null;
@@ -739,6 +741,34 @@ function CaptainView({state, setState, onSwitch}) {
         .catch(() => { setSaveStatus("error"); setTimeout(() => setSaveStatus("idle"), 3000); });
       return next;
     });
+  }
+
+  // Sync setup draft from Firestore updates only when not editing
+  useEffect(() => {
+    if (!setupDirty) setSetupDraft({ teamNames, players, rules, courseList });
+  }, [state]); // eslint-disable-line
+
+  function draftChange(patch) {
+    setSetupDraft(prev => ({ ...prev, ...patch }));
+    setSetupDirty(true);
+  }
+
+  async function saveSetup() {
+    await persist(setupDraft);
+    setSetupDirty(false);
+  }
+
+  function updDraftPlayer(team, idx, field, val) {
+    const p = JSON.parse(JSON.stringify(setupDraft.players));
+    p[team][idx][field] = val;
+    draftChange({ players: p });
+  }
+
+  function removeDraftPlayer(team, idx) {
+    if (setupDraft.players[team].length <= 1) return;
+    const p = JSON.parse(JSON.stringify(setupDraft.players));
+    p[team].splice(idx, 1);
+    draftChange({ players: p });
   }
 
   function setMR(rId,mi,result){
@@ -764,9 +794,9 @@ function CaptainView({state, setState, onSwitch}) {
   }
   function addPlayer(){
     if(!newPName.trim())return;
-    const p=JSON.parse(JSON.stringify(players));
+    const p=JSON.parse(JSON.stringify(setupDraft.players));
     p[addPlayerModal.team].push({name:newPName.trim(),handicap:newPHdcp?String(Math.round(parseFloat(newPHdcp)||0)):""});
-    persist({players:p});
+    draftChange({players:p});
     setAddPlayerModal(null);setNewPName("");setNewPHdcp("");setScanThumb("");
   }
 
@@ -1012,24 +1042,27 @@ function CaptainView({state, setState, onSwitch}) {
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
               <span style={{...SH,marginBottom:0}}>TEAM SETUP</span>
-              <span style={{fontSize:10,color:saveStatus==="saved"?"#4ade80":saveStatus==="error"?"#f87171":"rgba(255,255,255,0.3)",letterSpacing:2}}>{saveStatus==="saved"?"✓ SAVED":saveStatus==="error"?"✕ ERROR":"● AUTO-SAVING"}</span>
+              <button onClick={saveSetup} disabled={!setupDirty} style={{...BTN(setupDirty?gold:"rgba(255,255,255,0.08)",setupDirty?"#1a3d24":"rgba(255,255,255,0.25)"),fontSize:11,padding:"6px 14px"}}>
+                {saveStatus==="saved"?"✓ Saved":setupDirty?"Save Changes":"Saved"}
+              </button>
             </div>
+            {setupDirty&&<div style={{background:"rgba(201,168,76,0.08)",border:"1px solid rgba(201,168,76,0.25)",borderRadius:8,padding:"9px 14px",marginBottom:14,fontSize:11,color:gold}}>⚠ Unsaved changes — tap Save Changes to publish to all players.</div>}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
               {["team1","team2"].map(team=>(
                 <div key={team} style={{...CARD,marginBottom:0,border:`1px solid ${team==="team1"?"rgba(74,222,128,0.3)":"rgba(248,113,113,0.3)"}`}}>
                   <div style={{marginBottom:12}}>
                     <label style={LBL}>TEAM NAME</label>
-                    <input value={teamNames[team]} onChange={e=>persist({teamNames:{...teamNames,[team]:e.target.value}})} style={IS(team==="team1"?"#2d8a56":"#cc4444")}/>
+                    <input value={setupDraft.teamNames[team]} onChange={e=>draftChange({teamNames:{...setupDraft.teamNames,[team]:e.target.value}})} style={IS(team==="team1"?"#2d8a56":"#cc4444")}/>
                   </div>
                   <label style={LBL}>PLAYERS & HANDICAPS</label>
-                  {players[team].map((player,i)=>(
+                  {setupDraft.players[team].map((player,i)=>(
                     <div key={i} style={{display:"flex",alignItems:"flex-start",gap:6,marginBottom:8}}>
                       <span style={{fontSize:11,color:"rgba(255,255,255,0.3)",minWidth:14,paddingTop:10}}>{i+1}</span>
                       <div style={{flex:1,minWidth:0}}>
-                        <input value={player.name} onChange={e=>updPlayer(team,i,"name",e.target.value)} placeholder="Name" style={{...IS(),marginBottom:4,fontSize:13}}/>
-                        <input value={player.handicap} onChange={e=>updPlayer(team,i,"handicap",e.target.value)} onBlur={e=>{const v=parseFloat(e.target.value);if(!isNaN(v))updPlayer(team,i,"handicap",String(Math.round(v)));}} placeholder="Handicap" style={{...IS(player.handicap?gold:"rgba(255,255,255,0.1)"),fontSize:13,color:player.handicap?gold:"#fff"}}/>
+                        <input value={player.name} onChange={e=>updDraftPlayer(team,i,"name",e.target.value)} placeholder="Name" style={{...IS(),marginBottom:4,fontSize:13}}/>
+                        <input value={player.handicap} onChange={e=>updDraftPlayer(team,i,"handicap",e.target.value)} onBlur={e=>{const v=parseFloat(e.target.value);if(!isNaN(v))updDraftPlayer(team,i,"handicap",String(Math.round(v)));}} placeholder="Handicap" style={{...IS(player.handicap?gold:"rgba(255,255,255,0.1)"),fontSize:13,color:player.handicap?gold:"#fff"}}/>
                       </div>
-                      <button onClick={()=>removePlayer(team,i)} style={{background:"rgba(255,255,255,0.06)",border:"none",color:"rgba(255,255,255,0.3)",borderRadius:4,padding:"5px 7px",cursor:"pointer",fontSize:11,flexShrink:0,marginTop:2}}>✕</button>
+                      <button onClick={()=>removeDraftPlayer(team,i)} style={{background:"rgba(255,255,255,0.06)",border:"none",color:"rgba(255,255,255,0.3)",borderRadius:4,padding:"5px 7px",cursor:"pointer",fontSize:11,flexShrink:0,marginTop:2}}>✕</button>
                     </div>
                   ))}
                   <button onClick={()=>{setAddPlayerModal({team});setNewPName("");setNewPHdcp("");setScanThumb("");}} style={{marginTop:6,width:"100%",padding:"9px",background:"rgba(201,168,76,0.07)",border:`1px dashed rgba(201,168,76,0.35)`,color:gold,borderRadius:6,cursor:"pointer",fontFamily:"Georgia,serif",fontSize:13}}>+ Add Player</button>
@@ -1040,17 +1073,17 @@ function CaptainView({state, setState, onSwitch}) {
             <div style={{...CARD,background:"rgba(201,168,76,0.06)",border:"1px solid rgba(201,168,76,0.2)",marginBottom:16}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
                 <span style={{...SH,marginBottom:0}}>⚙️ SCORING RULES</span>
-                <button onClick={()=>persist({rules:[...rules,"New rule"]})} style={{...BTN("rgba(201,168,76,0.15)"),padding:"5px 12px",color:gold,fontSize:12}}>+ Add</button>
+                <button onClick={()=>draftChange({rules:[...setupDraft.rules,"New rule"]})} style={{...BTN("rgba(201,168,76,0.15)"),padding:"5px 12px",color:gold,fontSize:12}}>+ Add</button>
               </div>
-              {rules.map((rule,i)=>(
+              {setupDraft.rules.map((rule,i)=>(
                 <div key={i} style={{display:"flex",alignItems:"center",gap:6,marginBottom:7}}>
                   {editRuleIdx===i
-                    ?<><input value={editRuleTxt} onChange={e=>setEditRuleTxt(e.target.value)} style={{...IS(),flex:1,fontSize:12}} autoFocus onKeyDown={e=>{if(e.key==="Enter"){const r=[...rules];r[i]=editRuleTxt;persist({rules:r});setEditRuleIdx(null);}}}/>
-                      <button onClick={()=>{const r=[...rules];r[i]=editRuleTxt;persist({rules:r});setEditRuleIdx(null);}} style={{...BTN("#2d8a56"),padding:"5px 9px",fontSize:12}}>✓</button>
+                    ?<><input value={editRuleTxt} onChange={e=>setEditRuleTxt(e.target.value)} style={{...IS(),flex:1,fontSize:12}} autoFocus onKeyDown={e=>{if(e.key==="Enter"){const r=[...setupDraft.rules];r[i]=editRuleTxt;draftChange({rules:r});setEditRuleIdx(null);}}}/>
+                      <button onClick={()=>{const r=[...setupDraft.rules];r[i]=editRuleTxt;draftChange({rules:r});setEditRuleIdx(null);}} style={{...BTN("#2d8a56"),padding:"5px 9px",fontSize:12}}>✓</button>
                       <button onClick={()=>setEditRuleIdx(null)} style={{...BTN("rgba(255,255,255,0.07)"),padding:"5px 9px",fontSize:12,color:"rgba(255,255,255,0.4)"}}>✕</button></>
                     :<><div style={{flex:1,fontSize:12,color:"rgba(255,255,255,0.7)",lineHeight:1.5}}>• {rule}</div>
                       <button onClick={()=>{setEditRuleIdx(i);setEditRuleTxt(rule);}} style={{...BTN("rgba(255,255,255,0.06)"),padding:"3px 8px",fontSize:11,color:"rgba(255,255,255,0.4)"}}>✎</button>
-                      <button onClick={()=>persist({rules:rules.filter((_,idx)=>idx!==i)})} style={{...BTN("rgba(255,255,255,0.06)"),padding:"3px 8px",fontSize:11,color:"rgba(255,255,255,0.3)"}}>✕</button></>
+                      <button onClick={()=>draftChange({rules:setupDraft.rules.filter((_,idx)=>idx!==i)})} style={{...BTN("rgba(255,255,255,0.06)"),padding:"3px 8px",fontSize:11,color:"rgba(255,255,255,0.3)"}}>✕</button></>
                   }
                 </div>
               ))}
@@ -1058,19 +1091,19 @@ function CaptainView({state, setState, onSwitch}) {
             {/* Courses */}
             <div style={{...CARD,background:"rgba(201,168,76,0.06)",border:"1px solid rgba(201,168,76,0.2)",marginBottom:16,marginTop:4}}>
               <span style={{...SH,marginBottom:12}}>⛳ COURSES</span>
-              {courseList.map((c,i)=>(
+              {setupDraft.courseList.map((c,i)=>(
                 <div key={c.id} style={{marginBottom:12}}>
                   <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",letterSpacing:2,marginBottom:5}}>ROUND {c.id}</div>
                   <div style={{display:"flex",gap:8}}>
                     <input
                       value={c.day}
-                      onChange={e=>{const cl=[...courseList];cl[i]={...cl[i],day:e.target.value};persist({courseList:cl});}}
+                      onChange={e=>{const cl=[...setupDraft.courseList];cl[i]={...cl[i],day:e.target.value};draftChange({courseList:cl});}}
                       placeholder="Day label"
                       style={{...IS(),width:90,flex:"0 0 90px",fontSize:12}}
                     />
                     <input
                       value={c.name}
-                      onChange={e=>{const cl=[...courseList];cl[i]={...cl[i],name:e.target.value};persist({courseList:cl});}}
+                      onChange={e=>{const cl=[...setupDraft.courseList];cl[i]={...cl[i],name:e.target.value};draftChange({courseList:cl});}}
                       placeholder="Course name"
                       style={{...IS(gold),flex:1,fontSize:12}}
                     />
@@ -1078,7 +1111,10 @@ function CaptainView({state, setState, onSwitch}) {
                 </div>
               ))}
             </div>
-            <button onClick={()=>persist({matches:initMatches()})} style={{...BTN("rgba(255,255,255,0.07)"),border:"1px solid rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.4)",padding:"10px 20px"}}>Reset All Scores</button>
+            <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+              <button onClick={()=>persist({matches:initMatches()})} style={{...BTN("rgba(255,255,255,0.07)"),border:"1px solid rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.4)",padding:"10px 20px"}}>Reset All Scores</button>
+              {setupDirty&&<button onClick={saveSetup} style={{...BTN(gold,"#1a3d24"),padding:"10px 24px",fontSize:14}}>💾 Save Changes</button>}
+            </div>
           </div>
         )}
       </div>
