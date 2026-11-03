@@ -242,27 +242,26 @@ function PlayerView({playerName, state, setState, onSwitch}) {
               const myNames=myTeam==="team1"?t1n:t2n;
               const oppNames=myTeam==="team1"?t2n:t1n;
               const isMatchPlay=course.gameType==="matchplay";
-              const ls=isMatchPlay?getMatchLiveStatus(course.id,mi,matches):{state:"not_started",t1:0,t2:0,played:0};
+              const ls=getMatchLiveStatus(course.id,mi,matches);
               const isComplete=ls.state==="complete";
               const finalResult=isComplete?ls.result:result;
               const won=isComplete&&((finalResult==="team1"&&myTeam==="team1")||(finalResult==="team2"&&myTeam==="team2"));
               const lost=isComplete&&((finalResult==="team1"&&myTeam==="team2")||(finalResult==="team2"&&myTeam==="team1"));
               const halved=isComplete&&finalResult==="half";
               let statusText,statusColor;
-              if(!isMatchPlay){
-                statusText=result==="team1"?myTeam==="team1"?"✓ WIN":"✕ LOSS":result==="team2"?myTeam==="team2"?"✓ WIN":"✕ LOSS":result==="half"?"½ HALVED":"⏳ Pending";
-                statusColor=result==="team1"?myTeam==="team1"?"#4ade80":"#f87171":result==="team2"?myTeam==="team2"?"#4ade80":"#f87171":result==="half"?gold:"rgba(255,255,255,0.3)";
-              } else if(ls.state==="not_started"){
-                statusText="⏳ Not Started"; statusColor="rgba(255,255,255,0.3)";
-              } else if(ls.state==="in_progress"){
+              if(ls.state==="in_progress"){
                 const t1Lead=ls.t1>ls.t2,t2Lead=ls.t2>ls.t1;
                 const leadTeam=t1Lead?teamNames.team1:t2Lead?teamNames.team2:null;
-                const leadDiff=Math.abs(ls.t1-ls.t2);
                 statusText=leadTeam?`${leadTeam} leads ${ls.t1}–${ls.t2}`:`All Square`;
                 statusColor=t1Lead?"#4ade80":t2Lead?"#f87171":gold;
-              } else {
+              } else if(isComplete){
                 statusText=won?"✓ WIN":lost?"✕ LOSS":"½ HALVED";
                 statusColor=won?"#4ade80":lost?"#f87171":gold;
+              } else if(!isMatchPlay&&result){
+                statusText=result==="team1"?myTeam==="team1"?"✓ WIN":"✕ LOSS":result==="team2"?myTeam==="team2"?"✓ WIN":"✕ LOSS":"½ HALVED";
+                statusColor=result==="team1"?myTeam==="team1"?"#4ade80":"#f87171":result==="team2"?myTeam==="team2"?"#4ade80":"#f87171":gold;
+              } else {
+                statusText="⏳ Not Started"; statusColor="rgba(255,255,255,0.3)";
               }
               return (
                 <div key={i} onClick={()=>setOpenMatch({course,mi,pair,t1n,t2n})}
@@ -380,25 +379,22 @@ function PlayerView({playerName, state, setState, onSwitch}) {
                   {coursePairings.map((pair,mi)=>{
                     const t1n=pair.t1.map(j=>players.team1[j]?.name).filter(Boolean).join(" & ")||"TBD";
                     const t2n=pair.t2.map(j=>players.team2[j]?.name).filter(Boolean).join(" & ")||"TBD";
+                    const ls=getMatchLiveStatus(course.id,mi,matches);
+                    const mr=matches[course.id]?.[mi]?.result;
                     let liveText,liveColor,liveDot;
-                    if(isMatchPlay){
-                      const ls=getMatchLiveStatus(course.id,mi,matches);
-                      if(ls.state==="not_started"){ liveText="Not started"; liveColor="rgba(255,255,255,0.25)"; liveDot=false; }
-                      else if(ls.state==="in_progress"){
-                        const lead=ls.t1>ls.t2?teamNames.team1:ls.t2>ls.t1?teamNames.team2:null;
-                        liveText=lead?`${lead} ${ls.t1}–${ls.t2} thru ${ls.played}`:`All Square thru ${ls.played}`;
-                        liveColor=ls.t1>ls.t2?"#4ade80":ls.t2>ls.t1?"#f87171":gold; liveDot=true;
-                      } else {
-                        const winner=ls.result==="team1"?teamNames.team1:ls.result==="team2"?teamNames.team2:null;
-                        liveText=winner?`${winner} wins ${ls.t1}–${ls.t2}`:"Halved";
-                        liveColor=ls.result==="team1"?"#4ade80":ls.result==="team2"?"#f87171":gold; liveDot=false;
-                      }
+                    if(ls.state==="in_progress"){
+                      const lead=ls.t1>ls.t2?teamNames.team1:ls.t2>ls.t1?teamNames.team2:null;
+                      liveText=lead?`${lead} ${ls.t1}–${ls.t2} thru ${ls.played}`:`All Square thru ${ls.played}`;
+                      liveColor=ls.t1>ls.t2?"#4ade80":ls.t2>ls.t1?"#f87171":gold; liveDot=true;
+                    } else if(ls.state==="complete"){
+                      const winner=ls.result==="team1"?teamNames.team1:ls.result==="team2"?teamNames.team2:null;
+                      liveText=winner?`${winner} wins ${ls.t1}–${ls.t2}`:"Halved";
+                      liveColor=ls.result==="team1"?"#4ade80":ls.result==="team2"?"#f87171":gold; liveDot=false;
+                    } else if(mr){
+                      liveText=mr==="team1"?`${teamNames.team1} wins`:mr==="team2"?`${teamNames.team2} wins`:"Halved";
+                      liveColor=mr==="team1"?"#4ade80":mr==="team2"?"#f87171":gold; liveDot=false;
                     } else {
-                      const mr=matches[course.id]?.[mi]?.result;
-                      if(!mr){ liveText="Pending"; liveColor="rgba(255,255,255,0.25)"; liveDot=false; }
-                      else if(mr==="team1"){ liveText=`${teamNames.team1} wins`; liveColor="#4ade80"; liveDot=false; }
-                      else if(mr==="team2"){ liveText=`${teamNames.team2} wins`; liveColor="#f87171"; liveDot=false; }
-                      else { liveText="Halved"; liveColor=gold; liveDot=false; }
+                      liveText="Not started"; liveColor="rgba(255,255,255,0.25)"; liveDot=false;
                     }
                     return (
                       <div key={mi} style={{borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:8,marginTop:mi===0?0:6}}>
@@ -883,9 +879,12 @@ function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state }) {
   async function save() {
     setSaving(true);
     try {
-      const cur = (await storageGet()) || { ...DEFAULT_STATE };
+      // Use in-memory state (already fresh from onSnapshot) — avoids a redundant
+      // Firestore read and prevents potential data loss if that read fails.
+      const cur = JSON.parse(JSON.stringify(state));
       if (!cur.matches) cur.matches = initMatches();
-      if (!cur.matches[courseId]?.[matchIdx]) cur.matches[courseId][matchIdx] = { result: null };
+      if (!cur.matches[courseId]) cur.matches[courseId] = [];
+      if (!cur.matches[courseId][matchIdx]) cur.matches[courseId][matchIdx] = { result: null };
       cur.matches[courseId][matchIdx].holes = holes;
       const t1c = holes.filter(h => h === "team1").length;
       const t2c = holes.filter(h => h === "team2").length;
