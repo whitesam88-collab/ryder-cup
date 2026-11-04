@@ -1043,6 +1043,7 @@ function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state, set
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [holePopover, setHolePopover] = useState(null); // 1-indexed hole number
+  const [strokesExpanded, setStrokesExpanded] = useState(false);
 
   useEffect(() => { setHoles(initHoles()); setSaved(false); }, [matches, courseId, matchIdx]); // eslint-disable-line
 
@@ -1159,38 +1160,62 @@ function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state, set
 
   return (
     <div style={{ marginTop: 16 }}>
-      {/* Stroke allocation summary */}
+      {/* Stroke allocation summary — collapsible */}
       {strokeAlloc && !strokeAlloc.missingHandicap && (
-        <div style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(201,168,76,0.25)", borderRadius: 8, padding: "10px 12px", marginBottom: 12 }}>
-          <div style={{ fontSize: 9, color: gold, letterSpacing: 2, marginBottom: 8 }}>HANDICAP STROKES</div>
-          {allPlayersEqual
-            ? <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>No strokes — all players even</div>
-            : (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {Object.values(strokeAlloc.players).map(p => {
-                  const color = p.team === "team1" ? t1c : t2c;
-                  return (
-                    <div key={p.name} style={{
-                      background: p.team === "team1" ? "rgba(74,222,128,0.1)" : "rgba(248,113,113,0.1)",
-                      border: `1px solid ${color}50`,
-                      borderRadius: 20, padding: "6px 11px",
-                      display: "flex", alignItems: "center", gap: 7,
-                    }}>
-                      <div style={{ width: 20, height: 20, borderRadius: "50%", background: color + "25", border: `1.5px solid ${color}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: "bold", color, flexShrink: 0 }}>
-                        {p.name.charAt(0)}
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 12, fontWeight: "bold", color, lineHeight: 1.2 }}>{p.name}</div>
-                        <div style={{ fontSize: 10, color: p.strokesReceived === 0 ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.65)", lineHeight: 1.2 }}>
-                          {p.strokesReceived === 0 ? "scratch" : `+${p.strokesReceived} stroke${p.strokesReceived !== 1 ? "s" : ""}`}
+        <div style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(201,168,76,0.25)", borderRadius: 8, marginBottom: 12, overflow: "hidden" }}>
+          {/* Header row — always visible, tap to toggle */}
+          <div
+            onClick={() => setStrokesExpanded(x => !x)}
+            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px", cursor: "pointer", userSelect: "none" }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: 1, overflow: "hidden" }}>
+              <span style={{ fontSize: 9, color: gold, letterSpacing: 2, flexShrink: 0 }}>HANDICAP STROKES</span>
+              {!strokesExpanded && !allPlayersEqual && (
+                <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {Object.values(strokeAlloc.players).map(p =>
+                    p.strokesReceived === 0 ? `${p.name} scratch` : `${p.name} +${p.strokesReceived}`
+                  ).join(" · ")}
+                </span>
+              )}
+              {!strokesExpanded && allPlayersEqual && (
+                <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)" }}>No strokes — all even</span>
+              )}
+            </div>
+            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginLeft: 8, flexShrink: 0, transition: "transform 0.2s", display: "inline-block", transform: strokesExpanded ? "rotate(180deg)" : "none" }}>▼</span>
+          </div>
+          {/* Expanded detail */}
+          {strokesExpanded && (
+            <div style={{ padding: "0 12px 12px" }}>
+              {allPlayersEqual
+                ? <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>No strokes — all players even</div>
+                : (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {Object.values(strokeAlloc.players).map(p => {
+                      const color = p.team === "team1" ? t1c : t2c;
+                      return (
+                        <div key={p.name} style={{
+                          background: p.team === "team1" ? "rgba(74,222,128,0.1)" : "rgba(248,113,113,0.1)",
+                          border: `1px solid ${color}50`,
+                          borderRadius: 20, padding: "6px 11px",
+                          display: "flex", alignItems: "center", gap: 7,
+                        }}>
+                          <div style={{ width: 20, height: 20, borderRadius: "50%", background: color + "25", border: `1.5px solid ${color}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: "bold", color, flexShrink: 0 }}>
+                            {p.name.charAt(0)}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: "bold", color, lineHeight: 1.2 }}>{p.name}</div>
+                            <div style={{ fontSize: 10, color: p.strokesReceived === 0 ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.65)", lineHeight: 1.2 }}>
+                              {p.strokesReceived === 0 ? "scratch" : `+${p.strokesReceived} stroke${p.strokesReceived !== 1 ? "s" : ""}`}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )
-          }
+                      );
+                    })}
+                  </div>
+                )
+              }
+            </div>
+          )}
         </div>
       )}
       {strokeAlloc?.missingHandicap && (
@@ -1255,8 +1280,8 @@ function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state, set
                 <div style={{ width: 38, textAlign: "center", fontSize: 7, color: "rgba(255,255,255,0.15)", letterSpacing: 0 }}>SI</div>
               </div>
             )}
-            {/* Per-player stroke indicator rows */}
-            {strokeAlloc && !strokeAlloc.missingHandicap && !allPlayersEqual && (() => {
+            {/* Per-player stroke indicator rows — shown when expanded */}
+            {strokesExpanded && strokeAlloc && !strokeAlloc.missingHandicap && !allPlayersEqual && (() => {
               const strokePlayers = Object.values(strokeAlloc.players).filter(p => p.strokesReceived > 0);
               return strokePlayers.length > 0 ? (
                 <div style={{ marginBottom: 4 }}>
