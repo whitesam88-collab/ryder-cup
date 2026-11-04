@@ -3,10 +3,10 @@ import { storageGet, storageSet, storageSubscribe } from "./storage";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const COURSES = [
-  { id: 1, name: "The Quarry at La Quinta",    day: "Day 2",    format: "2v2 Best Ball (Net)", type: "bestball", gameType: "bestball" },
-  { id: 2, name: "La Quinta – Mountain Course", day: "Day 3 AM", format: "2v2 Best Ball (Net)", type: "bestball", gameType: "bestball" },
-  { id: 3, name: "La Quinta – Dunes Course",    day: "Day 3 PM", format: "2v2 Best Ball (Net)", type: "bestball", gameType: "bestball" },
-  { id: 4, name: "PGA West – Stadium Course",   day: "Day 4",    format: "1v1 Singles (Net)",   type: "singles", gameType: "singles" },
+  { id: 1, name: "The Classic Club",              day: "Day 2",    format: "2v2 Best Ball (Net)", type: "bestball", gameType: "bestball", holeStrokeIndexes: [15,17,7,5,9,13,3,11,1,4,6,16,12,8,14,10,18,2] },
+  { id: 2, name: "PGA West – Nicklaus Tournament", day: "Day 3 AM", format: "2v2 Best Ball (Net)", type: "bestball", gameType: "bestball", holeStrokeIndexes: [3,11,15,13,5,7,17,9,1,14,18,10,8,16,6,4,12,2] },
+  { id: 3, name: "PGA West – Pete Dye Stadium",    day: "Day 3 PM", format: "2v2 Best Ball (Net)", type: "bestball", gameType: "bestball", holeStrokeIndexes: [17,1,7,11,9,3,13,15,5,14,8,10,18,2,6,16,12,4] },
+  { id: 4, name: "Mission Hills North",            day: "Day 4",    format: "1v1 Singles (Net)",   type: "singles", gameType: "singles",  holeStrokeIndexes: [7,5,13,1,17,9,15,11,3,12,6,16,14,2,18,4,10,8] },
 ];
 const GAME_TYPE_LABELS = { bestball: "Best Ball (Net)", singles: "Singles (Net)", matchplay: "Match Play" };
 
@@ -44,14 +44,143 @@ function initPairings() {
     4:[{t1:[0],t2:[0]},{t1:[1],t2:[1]},{t1:[2],t2:[2]},{t1:[3],t2:[3]},{t1:[4],t2:[4]},{t1:[5],t2:[5]}],
   };
 }
+// Pure match-play state machine — derives close-out, Dormie, and result notation
+// holeResults: array of "team1"|"team2"|"half"|null  (null = not yet played)
+// Side A = "team1", Side B = "team2"
+function computeMatchState(holeResults, totalHoles = 18) {
+  let lead = 0; // + = team1 ahead, - = team2 ahead
+  let holesCompleted = 0;
+  let decidedOnHole = null;
+
+  for (let i = 0; i < totalHoles; i++) {
+    const h = holeResults[i];
+    if (h === null || h === undefined) break; // stop at first unplayed hole
+    holesCompleted++;
+    if (h === "team1") lead++;
+    else if (h === "team2") lead--;
+    // "half" leaves lead unchanged
+    const holesRemaining = totalHoles - holesCompleted;
+    if (Math.abs(lead) > holesRemaining) {
+      decidedOnHole = i + 1; // 1-indexed
+      break;
+    }
+  }
+
+  const holesRemaining = totalHoles - holesCompleted;
+  const absLead = Math.abs(lead);
+  const leader = lead > 0 ? "team1" : lead < 0 ? "team2" : null;
+
+  // Determine status
+  let status, isClosedOut, points, resultText;
+
+  if (holesCompleted === 0) {
+    status = "not_started";
+    isClosedOut = false;
+    points = { team1: 0, team2: 0 };
+    resultText = "";
+  } else if (decidedOnHole !== null) {
+    // Closed out before final hole
+    status = "complete";
+    isClosedOut = true;
+    points = lead > 0 ? { team1: 1, team2: 0 } : { team1: 0, team2: 1 };
+    resultText = `${absLead}&${holesRemaining}`;
+  } else if (holesCompleted === totalHoles) {
+    // All holes played
+    status = "complete";
+    isClosedOut = false;
+    if (lead === 0) {
+      points = { team1: 0.5, team2: 0.5 };
+      resultText = "Halved";
+    } else {
+      points = lead > 0 ? { team1: 1, team2: 0 } : { team1: 0, team2: 1 };
+      // Won on the last hole: "1 UP", "2 UP" etc.
+      // Won on hole 17 (2&1) is handled by close-out above
+      resultText = `${absLead} UP`;
+    }
+  } else if (absLead === holesRemaining) {
+    status = "dormie";
+    isClosedOut = false;
+    points = { team1: 0, team2: 0 };
+    const dormieTeam = lead > 0 ? "team1" : "team2";
+    resultText = `Dormie ${absLead} (${dormieTeam === "team1" ? "A" : "B"})`;
+  } else {
+    status = "in_progress";
+    isClosedOut = false;
+    points = { team1: 0, team2: 0 };
+    if (lead === 0) resultText = `All Square thru ${holesCompleted}`;
+    else resultText = `${absLead} UP thru ${holesCompleted}`;
+  }
+
+  return {
+    holesCompleted,
+    holesRemaining,
+    lead,
+    leader,
+    status,
+    isClosedOut,
+    decidedOnHole,
+    resultText,
+    points,
+    // convenience aliases used by existing display code
+    t1: lead > 0 ? absLead : 0,
+    t2: lead < 0 ? absLead : 0,
+    played: holesCompleted,
+    result: status === "complete" ? (lead > 0 ? "team1" : lead < 0 ? "team2" : "half") : null,
+  };
+}
+
 function getMatchLiveStatus(courseId, matchIdx, matches) {
   const holes = matches?.[courseId]?.[matchIdx]?.holes || [];
-  const t1 = holes.filter(h => h === "team1").length;
-  const t2 = holes.filter(h => h === "team2").length;
-  const played = holes.filter(h => h !== null).length;
-  if (played === 0) return { state: "not_started", t1: 0, t2: 0, played: 0 };
-  if (played === 18) return { state: "complete", t1, t2, played: 18, result: t1 > t2 ? "team1" : t2 > t1 ? "team2" : "half" };
-  return { state: "in_progress", t1, t2, played };
+  return computeMatchState(holes, 18);
+}
+
+// ─── Handicap stroke allocation ───────────────────────────────────────────────
+const HANDICAP_ALLOWANCES = { singles: 1.0, bestball: 1.0, matchplay: 1.0 };
+
+function parseHdcp(h) {
+  if (h === null || h === undefined || h === "") return null;
+  const s = String(h).trim();
+  if (s.startsWith("+")) return -parseFloat(s.slice(1));
+  const v = parseFloat(s);
+  return isNaN(v) ? null : v;
+}
+
+// Pure: returns per-player stroke allocation from handicaps + course stroke indexes.
+// Never stored; recomputes live whenever handicaps or stroke indexes change.
+function computeStrokeAllocation(pair, t1Players, t2Players, gameType, strokeIndexes) {
+  if (!strokeIndexes || strokeIndexes.length < 18) return null;
+  const allowance = HANDICAP_ALLOWANCES[gameType] ?? 1.0;
+  const allInMatch = [
+    ...(pair.t1 || []).map(idx => ({ ...(t1Players[idx] || {}), team: "team1", key: `t1-${idx}` })),
+    ...(pair.t2 || []).map(idx => ({ ...(t2Players[idx] || {}), team: "team2", key: `t2-${idx}` })),
+  ].filter(p => p.name);
+  if (!allInMatch.length) return null;
+  if (allInMatch.some(p => parseHdcp(p.handicap) === null)) return { missingHandicap: true, players: {} };
+
+  const hdcps = allInMatch.map(p => parseHdcp(p.handicap));
+  const lowHdcp = Math.min(...hdcps);
+
+  function strokesByHole(n) {
+    const r = {};
+    for (let h = 0; h < 18; h++) {
+      const si = Number(strokeIndexes[h]);
+      r[h + 1] = n <= 0 ? 0 : n <= 18 ? (si <= n ? 1 : 0) : 1 + (si <= n - 18 ? 1 : 0);
+    }
+    return r;
+  }
+
+  const players = {};
+  allInMatch.forEach(p => {
+    const hdcp = parseHdcp(p.handicap);
+    const strokes = Math.max(0, Math.round((hdcp - lowHdcp) * allowance));
+    const sbh = strokesByHole(strokes);
+    players[p.key] = {
+      name: p.name, team: p.team, handicap: hdcp,
+      strokesReceived: strokes, strokesByHole: sbh,
+      strokeHoles: Object.entries(sbh).filter(([,v]) => v > 0).map(([h]) => +h).sort((a,b)=>a-b),
+    };
+  });
+  return { lowHdcp, players, missingHandicap: false };
 }
 
 function calcPoints(matches) {
@@ -129,7 +258,12 @@ function getMergedCourses(courseList) {
   if (!courseList?.length) return COURSES;
   return COURSES.map(c => {
     const cl = courseList.find(x => x.id === c.id);
-    return cl ? { ...c, name: cl.name, day: cl.day, gameType: cl.gameType || c.gameType } : c;
+    if (!cl) return c;
+    // Fall back to COURSES default stroke indexes if captain hasn't entered them
+    const holeStrokeIndexes = Array.isArray(cl.holeStrokeIndexes) && cl.holeStrokeIndexes.length === 18
+      ? cl.holeStrokeIndexes
+      : c.holeStrokeIndexes;
+    return { ...c, name: cl.name, day: cl.day, gameType: cl.gameType || c.gameType, holeStrokeIndexes };
   });
 }
 
@@ -139,7 +273,7 @@ const DEFAULT_STATE = {
   matches: initMatches(),
   pairings: initPairings(),
   rules: DEFAULT_RULES,
-  courseList: COURSES.map(c=>({id:c.id,name:c.name,day:c.day,gameType:c.gameType})),
+  courseList: COURSES.map(c=>({id:c.id,name:c.name,day:c.day,gameType:c.gameType,holeStrokeIndexes:[]})),
   bets: [],
   roundScores: {},
 };
@@ -218,12 +352,13 @@ function PlayerView({playerName, state, setState, onSwitch}) {
   return (
     <div style={{minHeight:"100vh",background:BG,fontFamily:"Georgia,serif",color:"#fff"}}>
       {/* Header */}
-      <div style={{background:"rgba(0,0,0,0.45)",padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`1px solid rgba(201,168,76,0.25)`}}>
+      <div style={{background:"rgba(0,0,0,0.55)",padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`1px solid rgba(201,168,76,0.25)`}}>
         <div>
           <div style={{fontSize:10,color:"rgba(255,255,255,0.35)",letterSpacing:2}}>PLAYING AS</div>
           <div style={{fontSize:18,color:gold,fontWeight:"bold"}}>{playerName}</div>
           <div style={{fontSize:11,color:myTeam==="team1"?"#4ade80":"#f87171"}}>{teamNames[myTeam]}{myPlayer?.handicap?` · HCP ${myPlayer.handicap}`:""}</div>
         </div>
+        <img src="/apple-touch-icon.png" alt="Ryder Cup" style={{width:44,height:44,borderRadius:"50%",border:`2px solid ${gold}`,objectFit:"cover"}} />
         <button onClick={onSwitch} style={{...BTN("rgba(255,255,255,0.08)"),fontSize:11,padding:"7px 14px"}}>Switch</button>
       </div>
       {/* Tabs */}
@@ -246,20 +381,26 @@ function PlayerView({playerName, state, setState, onSwitch}) {
               const oppNames=myTeam==="team1"?t2n:t1n;
               const isMatchPlay=course.gameType==="matchplay";
               const ls=getMatchLiveStatus(course.id,mi,matches);
-              const isComplete=ls.state==="complete";
+              const isComplete=ls.status==="complete";
               const finalResult=isComplete?ls.result:result;
               const won=isComplete&&((finalResult==="team1"&&myTeam==="team1")||(finalResult==="team2"&&myTeam==="team2"));
               const lost=isComplete&&((finalResult==="team1"&&myTeam==="team2")||(finalResult==="team2"&&myTeam==="team1"));
               const halved=isComplete&&finalResult==="half";
               let statusText,statusColor;
-              if(ls.state==="in_progress"){
-                const t1Lead=ls.t1>ls.t2,t2Lead=ls.t2>ls.t1;
-                const leadTeam=t1Lead?teamNames.team1:t2Lead?teamNames.team2:null;
-                statusText=leadTeam?`${leadTeam} leads ${ls.t1}–${ls.t2}`:`All Square`;
-                statusColor=t1Lead?"#4ade80":t2Lead?"#f87171":gold;
-              } else if(isComplete){
-                statusText=won?"✓ WIN":lost?"✕ LOSS":"½ HALVED";
+              if(ls.status==="complete"){
+                const winnerTeam=ls.result==="team1"?teamNames.team1:ls.result==="team2"?teamNames.team2:null;
+                if(winnerTeam) statusText=won?`✓ WIN — ${ls.resultText}`:`✕ LOSS — ${ls.resultText}`;
+                else statusText=`½ ${ls.resultText}`;
                 statusColor=won?"#4ade80":lost?"#f87171":gold;
+              } else if(ls.status==="dormie"){
+                const dormieTeam=ls.lead>0?teamNames.team1:teamNames.team2;
+                const myTeamLeads=(ls.lead>0&&myTeam==="team1")||(ls.lead<0&&myTeam==="team2");
+                statusText=`Dormie ${Math.abs(ls.lead)} — ${dormieTeam}`;
+                statusColor=myTeamLeads?"#4ade80":"#f87171";
+              } else if(ls.status==="in_progress"){
+                const leadTeam=ls.lead>0?teamNames.team1:ls.lead<0?teamNames.team2:null;
+                statusText=leadTeam?`${leadTeam} ${Math.abs(ls.lead)} UP thru ${ls.played}`:`All Square thru ${ls.played}`;
+                statusColor=ls.lead>0?"#4ade80":ls.lead<0?"#f87171":gold;
               } else if(!isMatchPlay&&result){
                 statusText=result==="team1"?myTeam==="team1"?"✓ WIN":"✕ LOSS":result==="team2"?myTeam==="team2"?"✓ WIN":"✕ LOSS":"½ HALVED";
                 statusColor=result==="team1"?myTeam==="team1"?"#4ade80":"#f87171":result==="team2"?myTeam==="team2"?"#4ade80":"#f87171":gold;
@@ -268,7 +409,7 @@ function PlayerView({playerName, state, setState, onSwitch}) {
               }
               return (
                 <div key={i} onClick={()=>setOpenMatch({course,mi,pair,t1n,t2n})}
-                  style={{...CARD,borderLeft:`3px solid ${isComplete?(won?"#4ade80":lost?"#f87171":gold):ls.state==="in_progress"?statusColor:"rgba(255,255,255,0.1)"}`,cursor:"pointer",transition:"background 0.15s"}}
+                  style={{...CARD,borderLeft:`3px solid ${isComplete?(won?"#4ade80":lost?"#f87171":gold):ls.status==="in_progress"?statusColor:"rgba(255,255,255,0.1)"}`,cursor:"pointer",transition:"background 0.15s"}}
                   onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.07)"}
                   onMouseLeave={e=>e.currentTarget.style.background=CARD.background||"rgba(255,255,255,0.04)"}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
@@ -287,7 +428,7 @@ function PlayerView({playerName, state, setState, onSwitch}) {
                     <div style={{fontSize:isComplete?20:14,fontWeight:"bold",color:statusColor}}>
                       {statusText}
                     </div>
-                    {isMatchPlay&&ls.played>0&&ls.state==="in_progress"&&(
+                    {isMatchPlay&&ls.played>0&&ls.status==="in_progress"&&(
                       <div style={{fontSize:11,color:"rgba(255,255,255,0.3)"}}>{ls.played} holes played</div>
                     )}
                   </div>
@@ -303,24 +444,31 @@ function PlayerView({playerName, state, setState, onSwitch}) {
           const myNames=myTeam==="team1"?t1n:t2n;
           const oppNames=myTeam==="team1"?t2n:t1n;
           const ls=getMatchLiveStatus(course.id,mi,matches);
-          const isComplete=ls.state==="complete";
+          const isComplete=ls.status==="complete";
           const won=isComplete&&((ls.result==="team1"&&myTeam==="team1")||(ls.result==="team2"&&myTeam==="team2"));
           const lost=isComplete&&((ls.result==="team1"&&myTeam==="team2")||(ls.result==="team2"&&myTeam==="team1"));
           const halved=isComplete&&ls.result==="half";
           let hdrText,hdrColor;
-          if(ls.state==="not_started"){ hdrText="Not Started"; hdrColor="rgba(255,255,255,0.3)"; }
-          else if(ls.state==="in_progress"){
-            const leadTeam=ls.t1>ls.t2?teamNames.team1:ls.t2>ls.t1?teamNames.team2:null;
-            hdrText=leadTeam?`${leadTeam} leads ${ls.t1}–${ls.t2} thru ${ls.played}`:`All Square thru ${ls.played}`;
-            hdrColor=ls.t1>ls.t2?"#4ade80":ls.t2>ls.t1?"#f87171":gold;
-          } else {
-            hdrText=won?"✓ WIN":lost?"✕ LOSS":"½ HALVED";
+          if(ls.status==="not_started"){ hdrText="Not Started"; hdrColor="rgba(255,255,255,0.3)"; }
+          else if(ls.status==="complete"){
+            const winnerTeam=ls.result==="team1"?teamNames.team1:ls.result==="team2"?teamNames.team2:null;
+            hdrText=winnerTeam?`${winnerTeam} wins ${ls.resultText}`:ls.resultText;
             hdrColor=won?"#4ade80":lost?"#f87171":gold;
+          } else if(ls.status==="dormie"){
+            const dormieTeam=ls.lead>0?teamNames.team1:teamNames.team2;
+            hdrText=`Dormie ${Math.abs(ls.lead)} — ${dormieTeam}`;
+            hdrColor=ls.lead>0?"#4ade80":"#f87171";
+          } else if(ls.played>0){
+            const leadTeam=ls.lead>0?teamNames.team1:ls.lead<0?teamNames.team2:null;
+            hdrText=leadTeam?`${leadTeam} ${Math.abs(ls.lead)} UP thru ${ls.played}`:`All Square thru ${ls.played}`;
+            hdrColor=ls.lead>0?"#4ade80":ls.lead<0?"#f87171":gold;
+          } else {
+            hdrText="Not Started"; hdrColor="rgba(255,255,255,0.3)";
           }
           return (
             <div>
               <button onClick={()=>setOpenMatch(null)} style={{...BTN("rgba(255,255,255,0.08)"),fontSize:12,padding:"7px 14px",marginBottom:14}}>← Back</button>
-              <div style={{...CARD,borderLeft:`3px solid ${isComplete?(won?"#4ade80":lost?"#f87171":gold):ls.state==="in_progress"?hdrColor:"rgba(255,255,255,0.1)"}`}}>
+              <div style={{...CARD,borderLeft:`3px solid ${isComplete?(won?"#4ade80":lost?"#f87171":gold):ls.status==="in_progress"?hdrColor:"rgba(255,255,255,0.1)"}`}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
                   <div style={{fontSize:10,color:gold,letterSpacing:2}}>{course.day} — {course.name}</div>
                   <span style={{fontSize:9,background:"rgba(201,168,76,0.15)",border:`1px solid rgba(201,168,76,0.3)`,borderRadius:10,padding:"2px 8px",color:gold,letterSpacing:1}}>MATCH PLAY</span>
@@ -390,14 +538,18 @@ function PlayerView({playerName, state, setState, onSwitch}) {
                     const ls=getMatchLiveStatus(course.id,mi,matches);
                     const mr=matches[course.id]?.[mi]?.result;
                     let liveText,liveColor,liveDot;
-                    if(ls.state==="in_progress"){
-                      const lead=ls.t1>ls.t2?teamNames.team1:ls.t2>ls.t1?teamNames.team2:null;
-                      liveText=lead?`${lead} ${ls.t1}–${ls.t2} thru ${ls.played}`:`All Square thru ${ls.played}`;
-                      liveColor=ls.t1>ls.t2?"#4ade80":ls.t2>ls.t1?"#f87171":gold; liveDot=true;
-                    } else if(ls.state==="complete"){
+                    if(ls.status==="complete"){
                       const winner=ls.result==="team1"?teamNames.team1:ls.result==="team2"?teamNames.team2:null;
-                      liveText=winner?`${winner} wins ${ls.t1}–${ls.t2}`:"Halved";
+                      liveText=winner?`${winner} wins ${ls.resultText}`:ls.resultText;
                       liveColor=ls.result==="team1"?"#4ade80":ls.result==="team2"?"#f87171":gold; liveDot=false;
+                    } else if(ls.status==="dormie"){
+                      const dormieTeam=ls.lead>0?teamNames.team1:teamNames.team2;
+                      liveText=`Dormie ${Math.abs(ls.lead)} — ${dormieTeam}`;
+                      liveColor=ls.lead>0?"#4ade80":"#f87171"; liveDot=true;
+                    } else if(ls.status==="in_progress"){
+                      const leadTeam=ls.lead>0?teamNames.team1:ls.lead<0?teamNames.team2:null;
+                      liveText=leadTeam?`${leadTeam} ${Math.abs(ls.lead)} UP thru ${ls.played}`:`All Square thru ${ls.played}`;
+                      liveColor=ls.lead>0?"#4ade80":ls.lead<0?"#f87171":gold; liveDot=true;
                     } else if(mr){
                       liveText=mr==="team1"?`${teamNames.team1} wins`:mr==="team2"?`${teamNames.team2} wins`:"Halved";
                       liveColor=mr==="team1"?"#4ade80":mr==="team2"?"#f87171":gold; liveDot=false;
@@ -424,7 +576,6 @@ function PlayerView({playerName, state, setState, onSwitch}) {
               );
             })}
             <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
-            <LiveScoresSection courses={courses} players={players} roundScores={state.roundScores} teamNames={teamNames}/>
           </div>
         )}
 
@@ -517,10 +668,18 @@ function PlayerBetsTab({ playerName, allNames, state, setState }) {
     }
   }
 
-  function markResult(betId, side) {
+  function setWinner(betId, winnerName) {
     const newBets = (bets || []).map(b => {
       if (b.id !== betId) return b;
-      return { ...b, participants: b.participants.map(p => p.name === playerName ? { ...p, side } : p) };
+      return { ...b, participants: b.participants.map(p => ({ ...p, side: p.name === winnerName ? "winner" : "loser" })) };
+    });
+    writeBets(newBets);
+  }
+
+  function clearResult(betId) {
+    const newBets = (bets || []).map(b => {
+      if (b.id !== betId) return b;
+      return { ...b, participants: b.participants.map(p => ({ ...p, side: "pending" })) };
     });
     writeBets(newBets);
   }
@@ -574,27 +733,42 @@ function PlayerBetsTab({ playerName, allNames, state, setState }) {
         const me = bet.participants.find(p => p.name === playerName);
         const isMine = bet.createdBy === playerName;
         return (
-          <div key={bet.id} style={{ ...CARD, borderLeft:`3px solid ${me?.side==="winner"?"#4ade80":me?.side==="loser"?"#f87171":"rgba(201,168,76,0.4)"}` }}>
+          <div key={bet.id} style={{ ...CARD, borderLeft:`3px solid ${bet.participants.find(p=>p.side==="winner") ? "#4ade80" : "rgba(201,168,76,0.4)"}` }}>
             <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8 }}>
               <div style={{ fontSize:14, fontWeight:"bold" }}>{bet.name}</div>
               <div style={{ fontSize:13, color:gold, fontWeight:"bold" }}>${bet.amount}/pp</div>
             </div>
-            {bet.course && <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)", marginBottom:8 }}>{bet.course}</div>}
-            <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginBottom:12 }}>
-              {bet.participants.map(p => (
-                <span key={p.name} style={{ fontSize:11, padding:"3px 9px", borderRadius:20, background:p.side==="winner"?"rgba(74,222,128,0.15)":p.side==="loser"?"rgba(248,113,113,0.1)":"rgba(255,255,255,0.07)", border:`1px solid ${p.side==="winner"?"rgba(74,222,128,0.4)":p.side==="loser"?"rgba(248,113,113,0.3)":"rgba(255,255,255,0.12)"}`, color:p.side==="winner"?"#4ade80":p.side==="loser"?"#f87171":"rgba(255,255,255,0.55)" }}>
-                  {p.name === playerName ? "You" : p.name}{p.side==="winner"?" ✓":p.side==="loser"?" ✕":""}
-                </span>
-              ))}
-            </div>
-            <div style={{ fontSize:9, color:"rgba(255,255,255,0.3)", letterSpacing:2, marginBottom:6 }}>YOUR RESULT</div>
-            <div style={{ display:"flex", gap:6, marginBottom:8 }}>
-              {[{s:"winner",l:"✓ I Won",bg:"#1A5C38",on:"#2d8a56"},{s:"loser",l:"✕ I Lost",bg:"#7a1a1a",on:"#cc4444"},{s:"pending",l:"Pending",bg:"rgba(255,255,255,0.06)",on:"rgba(255,255,255,0.18)"}].map(btn => (
-                <button key={btn.s} onClick={() => markResult(bet.id, btn.s)} style={{ flex:1, padding:"9px 2px", border:"none", borderRadius:7, cursor:"pointer", fontFamily:"Georgia,serif", fontSize:11, background:me?.side===btn.s?btn.on:btn.bg, color:"#fff", fontWeight:me?.side===btn.s?"bold":"normal" }}>
-                  {btn.l}
-                </button>
-              ))}
-            </div>
+            {bet.course && <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)", marginBottom:12 }}>{bet.course}</div>}
+            {(() => {
+              const winner = bet.participants.find(p => p.side === "winner");
+              return (
+                <div style={{ marginBottom:8 }}>
+                  <div style={{ fontSize:9, color:"rgba(255,255,255,0.3)", letterSpacing:2, marginBottom:8 }}>WHO WON?</div>
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:winner ? 6 : 0 }}>
+                    {bet.participants.map(p => {
+                      const isWinner = p.side === "winner";
+                      const isLoser = p.side === "loser";
+                      return (
+                        <button key={p.name} onClick={() => setWinner(bet.id, p.name)} style={{
+                          padding:"9px 14px", borderRadius:8, border:"none", cursor:"pointer",
+                          fontFamily:"Georgia,serif", fontSize:12, fontWeight:isWinner?"bold":"normal",
+                          background: isWinner ? "#2d8a56" : isLoser ? "rgba(248,113,113,0.1)" : "rgba(255,255,255,0.07)",
+                          color: isWinner ? "#fff" : isLoser ? "rgba(248,113,113,0.5)" : "rgba(255,255,255,0.65)",
+                          outline: isWinner ? "2px solid #4ade80" : "none",
+                        }}>
+                          {isWinner ? "🏆 " : ""}{p.name === playerName ? "You" : p.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {winner && (
+                    <button onClick={() => clearResult(bet.id)} style={{ fontSize:10, color:"rgba(255,255,255,0.25)", background:"transparent", border:"none", cursor:"pointer", padding:"2px 0", fontFamily:"Georgia,serif" }}>
+                      ↩ clear result
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
             <div style={{ display:"flex", gap:6 }}>
               <button onClick={() => openEdit(bet)} style={{ flex:1, padding:"6px", background:"rgba(201,168,76,0.1)", border:`1px solid rgba(201,168,76,0.3)`, color:gold, borderRadius:6, cursor:"pointer", fontFamily:"Georgia,serif", fontSize:11 }}>
                 ✎ Edit Bet
@@ -868,16 +1042,14 @@ function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state, set
   const [holes, setHoles] = useState(initHoles);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [holePopover, setHolePopover] = useState(null); // 1-indexed hole number
 
   useEffect(() => { setHoles(initHoles()); setSaved(false); }, [matches, courseId, matchIdx]); // eslint-disable-line
 
   function applyHoles(newHoles) {
-    const t1c = newHoles.filter(h => h === "team1").length;
-    const t2c = newHoles.filter(h => h === "team2").length;
-    const pc  = newHoles.filter(h => h !== null).length;
-    const result = pc === 18 ? (t1c > t2c ? "team1" : t2c > t1c ? "team2" : "half") : null;
+    const ms = computeMatchState(newHoles, 18);
+    const result = ms.result;
 
-    // Update local React state immediately — header re-renders without waiting for Firestore
     if (setState) {
       setState(prev => {
         const m = JSON.parse(JSON.stringify(prev.matches || {}));
@@ -889,7 +1061,6 @@ function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state, set
       });
     }
 
-    // Persist to Firestore so all other players see the update
     setSaving(true);
     const cur = JSON.parse(JSON.stringify(state));
     if (!cur.matches) cur.matches = initMatches();
@@ -903,16 +1074,33 @@ function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state, set
       .finally(() => setSaving(false));
   }
 
+  const ms = computeMatchState(holes, 18);
+  const { decidedOnHole, status: matchStatus, lead, resultText } = ms;
+
+  // ── Stroke allocation ───────────────────────────────────────────────────────
+  const pair = state.pairings?.[courseId]?.[matchIdx];
+  const courseInfo = getMergedCourses(state.courseList).find(c => c.id === courseId);
+  const rawSI = courseInfo?.holeStrokeIndexes;
+  const hasValidSI = Array.isArray(rawSI) && rawSI.length === 18 && rawSI.every(si => { const n = Number(si); return Number.isInteger(n) && n >= 1 && n <= 18; });
+  const strokeAlloc = (pair && hasValidSI)
+    ? computeStrokeAllocation(pair, state.players?.team1 || [], state.players?.team2 || [], courseInfo?.gameType || "matchplay", rawSI)
+    : null;
+
+  function getHoleStrokeInfo(holeNum) {
+    if (!strokeAlloc || strokeAlloc.missingHandicap) return { t1: false, t2: false, players: [] };
+    const t1 = Object.values(strokeAlloc.players).some(p => p.team === "team1" && (p.strokesByHole?.[holeNum] || 0) > 0);
+    const t2 = Object.values(strokeAlloc.players).some(p => p.team === "team2" && (p.strokesByHole?.[holeNum] || 0) > 0);
+    const players = Object.values(strokeAlloc.players).filter(p => (p.strokesByHole?.[holeNum] || 0) > 0);
+    return { t1, t2, players, si: rawSI?.[holeNum - 1] };
+  }
+
   function toggleHole(idx) {
+    if (decidedOnHole !== null && idx >= decidedOnHole) return;
     const n = [...holes];
-    n[idx] = !n[idx] ? "team1" : n[idx] === "team1" ? "team2" : null;
+    n[idx] = !n[idx] ? "team1" : n[idx] === "team1" ? "team2" : n[idx] === "team2" ? "half" : null;
     setHoles(n);
     applyHoles(n);
   }
-
-  const t1 = holes.filter(h => h === "team1").length;
-  const t2 = holes.filter(h => h === "team2").length;
-  const played = holes.filter(h => h !== null).length;
 
   const t1Name = teamNames?.team1 || "TEAM 1";
   const t2Name = teamNames?.team2 || "TEAM 2";
@@ -920,35 +1108,194 @@ function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state, set
 
   function holeBtn(h) {
     const v = holes[h];
+    const afterCloseout = decidedOnHole !== null && h >= decidedOnHole;
+    const holeNum = h + 1;
+    const si = getHoleStrokeInfo(holeNum);
     return (
-      <button key={h} onClick={() => toggleHole(h)} style={{
-        flex: 1, minWidth: 0, height: 44, border: "none", borderRadius: 6, cursor: "pointer",
-        fontFamily: "Georgia,serif", fontSize: 11, fontWeight: "bold", padding: 0,
-        background: v === "team1" ? "rgba(74,222,128,0.25)" : v === "team2" ? "rgba(248,113,113,0.25)" : "rgba(0,0,0,0.35)",
-        color: v === "team1" ? t1c : v === "team2" ? t2c : "rgba(255,255,255,0.2)",
-        outline: v ? `1px solid ${v === "team1" ? t1c : t2c}` : "1px solid rgba(255,255,255,0.07)",
-      }}>
-        {v === "team1" ? "T1" : v === "team2" ? "T2" : "—"}
-      </button>
+      <div key={h} style={{ flex: 1, minWidth: 0, position: "relative" }}>
+        <button onClick={() => toggleHole(h)} disabled={afterCloseout} style={{
+          width: "100%", height: 44, border: "none", borderRadius: 6,
+          cursor: afterCloseout ? "default" : "pointer",
+          fontFamily: "Georgia,serif", fontSize: 11, fontWeight: "bold", padding: 0,
+          opacity: afterCloseout ? 0.25 : 1,
+          background: afterCloseout ? "rgba(0,0,0,0.15)" : v === "team1" ? "rgba(74,222,128,0.25)" : v === "team2" ? "rgba(248,113,113,0.25)" : v === "half" ? "rgba(201,168,76,0.2)" : "rgba(0,0,0,0.35)",
+          color: afterCloseout ? "rgba(255,255,255,0.15)" : v === "team1" ? t1c : v === "team2" ? t2c : v === "half" ? gold : "rgba(255,255,255,0.2)",
+          outline: afterCloseout ? "none" : v === "team1" ? `1px solid ${t1c}` : v === "team2" ? `1px solid ${t2c}` : v === "half" ? `1px solid ${gold}` : "1px solid rgba(255,255,255,0.07)",
+        }}>
+          {afterCloseout ? "·" : v === "team1" ? "T1" : v === "team2" ? "T2" : v === "half" ? "½" : "—"}
+        </button>
+        {/* Bottom color stripe — team color(s) for who gets a stroke on this hole */}
+        {(si.t1 || si.t2) && !afterCloseout && (
+          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 3, borderRadius: "0 0 6px 6px", display: "flex", pointerEvents: "none", overflow: "hidden" }}>
+            {si.t1 && <div style={{ flex: 1, background: t1c + "cc" }} />}
+            {si.t2 && <div style={{ flex: 1, background: t2c + "cc" }} />}
+          </div>
+        )}
+      </div>
     );
   }
 
+  // Status bar text
+  let statusBarText, statusBarColor;
+  if (matchStatus === "complete") {
+    const winnerName = ms.result === "team1" ? t1Name : ms.result === "team2" ? t2Name : null;
+    statusBarText = winnerName ? `Final — ${winnerName} wins ${resultText}` : `Final — ${resultText}`;
+    statusBarColor = ms.result === "team1" ? t1c : ms.result === "team2" ? t2c : gold;
+  } else if (matchStatus === "dormie") {
+    const dormieTeam = lead > 0 ? t1Name : t2Name;
+    statusBarText = `Dormie ${Math.abs(lead)} — ${dormieTeam}`;
+    statusBarColor = lead > 0 ? t1c : t2c;
+  } else if (matchStatus === "in_progress") {
+    const leadTeam = lead > 0 ? t1Name : lead < 0 ? t2Name : null;
+    statusBarText = leadTeam ? `${leadTeam} ${Math.abs(lead)} UP thru ${ms.played}` : `All Square thru ${ms.played}`;
+    statusBarColor = lead > 0 ? t1c : lead < 0 ? t2c : gold;
+  } else {
+    statusBarText = null;
+    statusBarColor = "rgba(255,255,255,0.3)";
+  }
+
+  const allPlayersEqual = strokeAlloc && !strokeAlloc.missingHandicap &&
+    Object.values(strokeAlloc.players).every(p => p.strokesReceived === 0);
+
   return (
     <div style={{ marginTop: 16 }}>
+      {/* Stroke allocation summary */}
+      {strokeAlloc && !strokeAlloc.missingHandicap && (
+        <div style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(201,168,76,0.25)", borderRadius: 8, padding: "10px 12px", marginBottom: 12 }}>
+          <div style={{ fontSize: 9, color: gold, letterSpacing: 2, marginBottom: 8 }}>HANDICAP STROKES</div>
+          {allPlayersEqual
+            ? <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>No strokes — all players even</div>
+            : (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {Object.values(strokeAlloc.players).map(p => {
+                  const color = p.team === "team1" ? t1c : t2c;
+                  return (
+                    <div key={p.name} style={{
+                      background: p.team === "team1" ? "rgba(74,222,128,0.1)" : "rgba(248,113,113,0.1)",
+                      border: `1px solid ${color}50`,
+                      borderRadius: 20, padding: "6px 11px",
+                      display: "flex", alignItems: "center", gap: 7,
+                    }}>
+                      <div style={{ width: 20, height: 20, borderRadius: "50%", background: color + "25", border: `1.5px solid ${color}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: "bold", color, flexShrink: 0 }}>
+                        {p.name.charAt(0)}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: "bold", color, lineHeight: 1.2 }}>{p.name}</div>
+                        <div style={{ fontSize: 10, color: p.strokesReceived === 0 ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.65)", lineHeight: 1.2 }}>
+                          {p.strokesReceived === 0 ? "scratch" : `+${p.strokesReceived} stroke${p.strokesReceived !== 1 ? "s" : ""}`}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          }
+        </div>
+      )}
+      {strokeAlloc?.missingHandicap && (
+        <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 8, padding: "9px 12px", marginBottom: 12, fontSize: 11, color: "rgba(248,113,113,0.8)" }}>
+          ⚠ Set all player handicaps in Setup to show stroke allocation
+        </div>
+      )}
+      {!strokeAlloc && pair && !hasValidSI && (
+        <div style={{ background: "rgba(201,168,76,0.07)", border: "1px solid rgba(201,168,76,0.2)", borderRadius: 8, padding: "9px 12px", marginBottom: 12, fontSize: 11, color: "rgba(201,168,76,0.6)" }}>
+          ⛳ Add hole stroke indexes in Setup to show handicap strokes
+        </div>
+      )}
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <div style={{ fontSize: 11, color: gold, letterSpacing: 2, fontWeight: "bold" }}>SCORECARD</div>
-        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)" }}>tap hole to cycle: T1 → T2 → clear</div>
+        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)" }}>tap hole to cycle: T1 → T2 → ½ → clear</div>
       </div>
+      {matchStatus === "complete" && (
+        <div style={{ background: ms.result === "team1" ? "rgba(74,222,128,0.12)" : ms.result === "team2" ? "rgba(248,113,113,0.12)" : "rgba(201,168,76,0.12)", border: `1px solid ${statusBarColor}`, borderRadius: 8, padding: "10px 14px", marginBottom: 12, textAlign: "center" }}>
+          <div style={{ fontSize: 15, fontWeight: "bold", color: statusBarColor }}>{statusBarText}</div>
+          {decidedOnHole && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 3 }}>Match ended on hole {decidedOnHole} · remaining holes greyed out</div>}
+        </div>
+      )}
       {[0, 9].map(start => {
         const hs = Array.from({ length: 9 }, (_, i) => start + i);
         const sub1 = hs.filter(h => holes[h] === "team1").length;
         const sub2 = hs.filter(h => holes[h] === "team2").length;
         return (
           <div key={start} style={{ marginBottom: 14, background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: "10px 10px 12px" }}>
-            <div style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 4 }}>
-              {hs.map(h => <div key={h} style={{ flex: 1, minWidth: 0, textAlign: "center", fontSize: 9, color: "rgba(255,255,255,0.3)" }}>{h + 1}</div>)}
+            {/* Hole numbers row — tap to open stroke popover */}
+            <div style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 2 }}>
+              {hs.map(h => {
+                const hNum = h + 1;
+                const si = getHoleStrokeInfo(hNum);
+                const dimmed = decidedOnHole !== null && h >= decidedOnHole;
+                return (
+                  <div
+                    key={h}
+                    onClick={() => strokeAlloc && !strokeAlloc.missingHandicap && setHolePopover(hNum)}
+                    style={{
+                      flex: 1, minWidth: 0, textAlign: "center", fontSize: 9,
+                      color: dimmed ? "rgba(255,255,255,0.15)" : (si.t1 || si.t2) ? "rgba(255,255,255,0.75)" : "rgba(255,255,255,0.3)",
+                      fontWeight: (si.t1 || si.t2) && !dimmed ? "bold" : "normal",
+                      cursor: strokeAlloc && !strokeAlloc.missingHandicap ? "pointer" : "default",
+                      paddingBottom: 2,
+                    }}
+                  >
+                    {hNum}
+                  </div>
+                );
+              })}
               <div style={{ width: 38, textAlign: "center", fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: 1 }}>{start === 0 ? "OUT" : "IN"}</div>
             </div>
+            {/* SI row (only shown when stroke indexes are set) */}
+            {hasValidSI && (
+              <div style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 3 }}>
+                {hs.map(h => (
+                  <div key={h} style={{ flex: 1, minWidth: 0, textAlign: "center", fontSize: 8, color: "rgba(255,255,255,0.22)", fontStyle: "italic" }}>
+                    {rawSI[h]}
+                  </div>
+                ))}
+                <div style={{ width: 38, textAlign: "center", fontSize: 7, color: "rgba(255,255,255,0.15)", letterSpacing: 0 }}>SI</div>
+              </div>
+            )}
+            {/* Per-player stroke indicator rows */}
+            {strokeAlloc && !strokeAlloc.missingHandicap && !allPlayersEqual && (() => {
+              const strokePlayers = Object.values(strokeAlloc.players).filter(p => p.strokesReceived > 0);
+              return strokePlayers.length > 0 ? (
+                <div style={{ marginBottom: 4 }}>
+                  {strokePlayers.map(p => {
+                    const color = p.team === "team1" ? t1c : t2c;
+                    const initial = p.name.charAt(0).toUpperCase();
+                    return (
+                      <div key={p.name} style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 2 }}>
+                        {hs.map(h => {
+                          const hNum = h + 1;
+                          const strokes = p.strokesByHole?.[hNum] || 0;
+                          return (
+                            <div key={h} style={{ flex: 1, minWidth: 0, height: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              {strokes > 0 ? (
+                                <div style={{
+                                  width: 15, height: 15, borderRadius: "50%",
+                                  background: color + "28",
+                                  border: `1.5px solid ${color}`,
+                                  fontSize: 8, fontWeight: "bold", color,
+                                  display: "flex", alignItems: "center", justifyContent: "center",
+                                  lineHeight: 1,
+                                }}>
+                                  {initial}
+                                </div>
+                              ) : (
+                                <div style={{ width: 2, height: 2, borderRadius: "50%", background: "rgba(255,255,255,0.1)" }} />
+                              )}
+                            </div>
+                          );
+                        })}
+                        <div style={{ width: 38, textAlign: "right", fontSize: 9, color, fontWeight: "bold", paddingRight: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {p.name.split(" ")[0]}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null;
+            })()}
             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
               {hs.map(h => holeBtn(h))}
               <div style={{ width: 38, textAlign: "center", fontSize: 13 }}>
@@ -960,25 +1307,63 @@ function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state, set
           </div>
         );
       })}
-      {played > 0 && (
-        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: "10px 14px", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>After {played} hole{played !== 1 ? "s" : ""}</div>
-          <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 22, fontWeight: "bold", color: t1 > t2 ? t1c : t1 < t2 ? "rgba(255,255,255,0.35)" : gold }}>{t1}</div>
-              <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: 1, maxWidth: 60, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t1Name}</div>
-            </div>
-            <div style={{ color: "rgba(255,255,255,0.2)", fontSize: 14 }}>–</div>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 22, fontWeight: "bold", color: t2 > t1 ? t2c : t2 < t1 ? "rgba(255,255,255,0.35)" : gold }}>{t2}</div>
-              <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: 1, maxWidth: 60, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t2Name}</div>
-            </div>
-          </div>
+      {ms.played > 0 && matchStatus !== "complete" && (
+        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: "10px 14px", marginBottom: 10, textAlign: "center" }}>
+          <div style={{ fontSize: 15, fontWeight: "bold", color: statusBarColor }}>{statusBarText}</div>
         </div>
       )}
       <div style={{ textAlign:"center", padding:"10px 0", fontSize:12, color: saving?"rgba(255,255,255,0.4)":saved?"#4ade80":"rgba(255,255,255,0.2)", letterSpacing:1 }}>
         {saving ? "Saving..." : saved ? "✓ Saved" : "Tap holes to score · saves automatically"}
       </div>
+
+      {/* Hole stroke popover */}
+      {holePopover !== null && strokeAlloc && !strokeAlloc.missingHandicap && (
+        <div onClick={() => setHolePopover(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 300, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#152e1d", border: `1px solid ${gold}`, borderRadius: "16px 16px 0 0", padding: "20px 24px 28px", width: "100%", maxWidth: 480 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <div>
+                <span style={{ fontSize: 16, fontWeight: "bold", color: gold }}>Hole {holePopover}</span>
+                {hasValidSI && <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", marginLeft: 8 }}>· SI {rawSI[holePopover - 1]}</span>}
+              </div>
+              <button onClick={() => setHolePopover(null)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>✕</button>
+            </div>
+            {(() => {
+              const info = getHoleStrokeInfo(holePopover);
+              const withStrokes = info.players;
+              const withoutStrokes = Object.values(strokeAlloc.players).filter(p => (p.strokesByHole?.[holePopover] || 0) === 0);
+              return (
+                <>
+                  {withStrokes.length === 0
+                    ? <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)" }}>No strokes on this hole</div>
+                    : (
+                      <div style={{ marginBottom: 10 }}>
+                        <div style={{ fontSize: 9, color: gold, letterSpacing: 2, marginBottom: 7 }}>STROKES</div>
+                        {withStrokes.map(p => (
+                          <div key={p.name} style={{ fontSize: 13, marginBottom: 5 }}>
+                            <span style={{ color: p.team === "team1" ? t1c : t2c, fontWeight: "bold" }}>{p.name}</span>
+                            <span style={{ color: "rgba(255,255,255,0.5)", marginLeft: 6 }}>+{p.strokesByHole[holePopover]}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  }
+                  {withoutStrokes.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: 2, marginBottom: 6 }}>NO STROKE</div>
+                      {withoutStrokes.map(p => (
+                        <div key={p.name} style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", marginBottom: 3 }}>
+                          <span style={{ color: p.team === "team1" ? "rgba(74,222,128,0.5)" : "rgba(248,113,113,0.5)" }}>{p.name}</span>
+                          {" — "}scratch
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1201,7 +1586,6 @@ function CaptainView({state, setState, onSwitch}) {
                 </div>
               );
             })}
-            <LiveScoresSection courses={courses} players={players} roundScores={roundScores} teamNames={teamNames}/>
           </div>
         )}
 
@@ -1477,6 +1861,40 @@ function CaptainView({state, setState, onSwitch}) {
                       <option value="matchplay">Match Play</option>
                     </select>
                     {c.gameType==="matchplay"&&<div style={{fontSize:11,color:"rgba(201,168,76,0.7)",marginTop:6}}>⛳ Each hole worth 1 point · Ties = 0 · Most holes wins the match</div>}
+                  </div>
+                  {/* Hole Stroke Indexes (1–18) */}
+                  <div style={{marginTop:12}}>
+                    <label style={{...LBL,marginBottom:7}}>HOLE STROKE INDEXES <span style={{color:"rgba(255,255,255,0.2)",fontWeight:"normal"}}>· 1–18 each used once · needed for handicap strokes</span></label>
+                    {[0,9].map(start=>(
+                      <div key={start} style={{display:"grid",gridTemplateColumns:"repeat(9,1fr)",gap:4,marginBottom:4}}>
+                        {Array.from({length:9},(_,k)=>start+k).map(hIdx=>(
+                          <div key={hIdx} style={{textAlign:"center"}}>
+                            <div style={{fontSize:8,color:"rgba(255,255,255,0.2)",marginBottom:2}}>{hIdx+1}</div>
+                            <input
+                              type="number" min="1" max="18"
+                              value={((c.holeStrokeIndexes||[])[hIdx])||""}
+                              onChange={e=>{
+                                const cl=[...setupDraft.courseList];
+                                const si=[...((cl[i].holeStrokeIndexes||Array(18).fill("")))];
+                                si[hIdx]=e.target.value===""?"":parseInt(e.target.value,10);
+                                cl[i]={...cl[i],holeStrokeIndexes:si};
+                                draftChange({courseList:cl});
+                              }}
+                              style={{...IS(),padding:"4px 2px",textAlign:"center",fontSize:11,MozAppearance:"textfield"}}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                    {/* Validation: warn if any duplicates or missing */}
+                    {(()=>{
+                      const si=(c.holeStrokeIndexes||[]).map(Number).filter(n=>n>=1&&n<=18);
+                      if(si.length===0) return null;
+                      const dups=si.filter((v,idx)=>si.indexOf(v)!==idx);
+                      if(dups.length>0) return <div style={{fontSize:10,color:"#f87171",marginTop:3}}>⚠ Duplicate SI values: {[...new Set(dups)].join(", ")}</div>;
+                      if(si.length===18) return <div style={{fontSize:10,color:"#4ade80",marginTop:3}}>✓ Stroke indexes complete</div>;
+                      return <div style={{fontSize:10,color:"rgba(255,255,255,0.3)",marginTop:3}}>{si.length}/18 entered</div>;
+                    })()}
                   </div>
                 </div>
               ))}
