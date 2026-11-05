@@ -284,7 +284,7 @@ const DEFAULT_STATE = {
 function PlayerPicker({players, teamNames, onSelect}) {
   return (
     <div style={{minHeight:"100vh",background:BG,fontFamily:"Georgia,serif",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
-      <img src="/logo.webp" alt="logo" style={{width:110,height:140,objectFit:"contain",backgroundColor:"#0d1f3c",borderRadius:14,border:"3px solid #C9A84C",marginBottom:10,display:"block"}}/>
+      <img src="/logo.webp" alt="logo" style={{width:120,height:150,objectFit:"contain",marginBottom:10,display:"block"}}/>
       <div style={{fontSize:22,color:gold,fontWeight:"bold",letterSpacing:3,marginBottom:4,textAlign:"center"}}>PALM SPRINGS</div>
       <div style={{fontSize:12,color:"rgba(255,255,255,0.35)",letterSpacing:4,marginBottom:36,textAlign:"center"}}>RYDER CUP</div>
       <div style={{fontSize:10,color:"rgba(255,255,255,0.4)",letterSpacing:3,marginBottom:20,textAlign:"center"}}>SELECT YOUR PLAYER</div>
@@ -358,7 +358,7 @@ function PlayerView({playerName, state, setState, onSwitch}) {
           <div style={{fontSize:18,color:gold,fontWeight:"bold"}}>{playerName}</div>
           <div style={{fontSize:11,color:myTeam==="team1"?"#4ade80":"#f87171"}}>{teamNames[myTeam]}{myPlayer?.handicap?` · HCP ${myPlayer.handicap}`:""}</div>
         </div>
-        <img src="/logo.webp" alt="Ryder Cup" style={{width:34,height:44,objectFit:"contain",backgroundColor:"#0d1f3c",borderRadius:8,border:`2px solid ${gold}`}} />
+        <img src="/logo.webp" alt="Ryder Cup" style={{width:34,height:44,objectFit:"contain"}} />
         <button onClick={onSwitch} style={{...BTN("rgba(255,255,255,0.08)"),fontSize:11,padding:"7px 14px"}}>Switch</button>
       </div>
       {/* Tabs */}
