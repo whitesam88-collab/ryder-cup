@@ -358,7 +358,7 @@ function PlayerView({playerName, state, setState, onSwitch}) {
           <div style={{fontSize:18,color:gold,fontWeight:"bold"}}>{playerName}</div>
           <div style={{fontSize:11,color:myTeam==="team1"?"#4ade80":"#f87171"}}>{teamNames[myTeam]}{myPlayer?.handicap?` · HCP ${myPlayer.handicap}`:""}</div>
         </div>
-        <img src="/apple-touch-icon.png" alt="Ryder Cup" style={{width:44,height:44,borderRadius:"50%",border:`2px solid ${gold}`,objectFit:"cover"}} />
+        <img src="/logo.jpg" alt="Ryder Cup" style={{width:44,height:44,borderRadius:"50%",border:`2px solid ${gold}`,objectFit:"cover",objectPosition:"center 10%"}} />
         <button onClick={onSwitch} style={{...BTN("rgba(255,255,255,0.08)"),fontSize:11,padding:"7px 14px"}}>Switch</button>
       </div>
       {/* Tabs */}
