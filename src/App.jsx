@@ -284,7 +284,7 @@ const DEFAULT_STATE = {
 function PlayerPicker({players, teamNames, onSelect}) {
   return (
     <div style={{minHeight:"100vh",background:BG,fontFamily:"Georgia,serif",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
-      <div style={{fontSize:32,marginBottom:6}}>🏆</div>
+      <img src="/logo.jpg" alt="logo" style={{width:120,height:120,objectFit:"cover",objectPosition:"center 10%",borderRadius:"50%",border:"3px solid #C9A84C",marginBottom:10,display:"block"}}/>
       <div style={{fontSize:22,color:gold,fontWeight:"bold",letterSpacing:3,marginBottom:4,textAlign:"center"}}>PALM SPRINGS</div>
       <div style={{fontSize:12,color:"rgba(255,255,255,0.35)",letterSpacing:4,marginBottom:36,textAlign:"center"}}>RYDER CUP</div>
       <div style={{fontSize:10,color:"rgba(255,255,255,0.4)",letterSpacing:3,marginBottom:20,textAlign:"center"}}>SELECT YOUR PLAYER</div>
