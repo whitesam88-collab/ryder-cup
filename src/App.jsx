@@ -2132,7 +2132,18 @@ function CaptainView({state, setState, onSwitch}) {
                 </div>
               )}
               {(state.archives||[]).length>0&&(
-                <div style={{marginTop:14,fontSize:11,color:"rgba(255,255,255,0.3)",textAlign:"center"}}>{state.archives.length} trip{state.archives.length!==1?"s":""} archived</div>
+                <div style={{marginTop:14}}>
+                  <div style={{fontSize:9,color:"rgba(255,255,255,0.25)",letterSpacing:2,marginBottom:8}}>ARCHIVED TRIPS</div>
+                  {[...(state.archives||[])].reverse().map(a=>(
+                    <div key={a.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 10px",background:"rgba(0,0,0,0.2)",borderRadius:7,marginBottom:6}}>
+                      <div>
+                        <div style={{fontSize:12,fontWeight:"bold"}}>{a.name}</div>
+                        <div style={{fontSize:10,color:"rgba(255,255,255,0.3)"}}>{a.archivedAt?new Date(a.archivedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):""}</div>
+                      </div>
+                      <button onClick={()=>persist({archives:(state.archives||[]).filter(x=>x.id!==a.id)})} style={{...BTN("rgba(248,113,113,0.12)"),padding:"5px 10px",fontSize:11,color:"#f87171",border:"1px solid rgba(248,113,113,0.25)"}}>Delete</button>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>
