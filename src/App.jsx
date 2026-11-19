@@ -474,7 +474,7 @@ function PlayerPicker({players, teamNames, onSelect, archives}) {
   return (
     <div style={{minHeight:"100vh",background:BG,fontFamily:"Georgia,serif",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
       <img src="/logo.webp" alt="logo" style={{width:120,height:150,objectFit:"contain",marginBottom:10,display:"block"}}/>
-      <div style={{fontSize:22,color:gold,fontWeight:"bold",letterSpacing:3,marginBottom:4,textAlign:"center"}}>PALM SPRINGS</div>
+      <div style={{fontSize:22,color:gold,fontWeight:"bold",letterSpacing:3,marginBottom:4,textAlign:"center"}}>DEGEN</div>
       <div style={{fontSize:12,color:"rgba(255,255,255,0.35)",letterSpacing:4,marginBottom:36,textAlign:"center"}}>RYDER CUP</div>
       <div style={{fontSize:10,color:"rgba(255,255,255,0.4)",letterSpacing:3,marginBottom:20,textAlign:"center"}}>SELECT YOUR PLAYER</div>
       <div style={{width:"100%",maxWidth:420}}>
@@ -2291,7 +2291,7 @@ function CaptainView({state, setState, onSwitch}) {
       )}
 
       <div style={{textAlign:"center",padding:20,color:"rgba(255,255,255,0.15)",fontSize:11,letterSpacing:2}}>
-        PALM SPRINGS RYDER CUP  •  OCTOBER
+        DEGEN RYDER CUP  •  OCTOBER
       </div>
     </div>
   );
