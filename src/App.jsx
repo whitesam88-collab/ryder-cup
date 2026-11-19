@@ -381,8 +381,8 @@ function BandonTeaserPage({ onEnter, onBack }) {
         {/* Courses */}
         <div style={{background:"rgba(0,0,0,0.35)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:14,padding:"18px 24px",maxWidth:300,width:"100%",backdropFilter:"blur(8px)"}}>
           <div style={{fontSize:9,color:gold,letterSpacing:3,marginBottom:14}}>THE COURSES</div>
-          {["Bandon Dunes","Pacific Dunes","Bandon Trails","Old Macdonald","Sheep Ranch"].map((c,i)=>(
-            <div key={c} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:i<4?"1px solid rgba(255,255,255,0.06)":"none"}}>
+          {["Bandon Dunes","Pacific Dunes","Bandon Trails","Old Macdonald","Sheep Ranch","Bandon Preserve","Shorty's"].map((c,i)=>(
+            <div key={c} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:i<6?"1px solid rgba(255,255,255,0.06)":"none"}}>
               <div style={{width:20,height:1,background:`rgba(201,168,76,0.4)`}}/>
               <span style={{fontSize:13,color:"rgba(255,255,255,0.75)"}}>{c}</span>
             </div>
