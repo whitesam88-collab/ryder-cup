@@ -355,16 +355,22 @@ function HistoryView({ archives, onBack }) {
             {isExp&&sorted.length>0&&(
               <div>
                 <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",letterSpacing:3,marginBottom:8}}>PLAYER RECORDS</div>
-                {sorted.map(([name,s],idx)=>(
+                {(()=>{
+                  const winPlayers = a.winner==="team1"?(a.team1Players||[]):a.winner==="team2"?(a.team2Players||[]):[];
+                  return sorted.map(([name,s],idx)=>(
                   <div key={name} style={{display:"flex",alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
                     <div style={{width:22,fontSize:10,color:idx<3?gold:"rgba(255,255,255,0.3)",fontWeight:"bold"}}>{idx+1}.</div>
-                    <div style={{flex:1,fontSize:13}}>{name}</div>
+                    <div style={{flex:1,fontSize:13,display:"flex",alignItems:"center",gap:5}}>
+                      {winPlayers.includes(name)&&<span style={{fontSize:11}} title="Winning team">🏆</span>}
+                      {name}
+                    </div>
                     <div style={{display:"flex",gap:12,alignItems:"center"}}>
                       <span style={{fontSize:10,color:"rgba(255,255,255,0.35)"}}>{s.w}-{s.l}-{s.h}</span>
                       <span style={{fontSize:14,fontWeight:"bold",color:s.pts>0?gold:"rgba(255,255,255,0.4)",minWidth:36,textAlign:"right"}}>{s.pts%1===0?s.pts:s.pts.toFixed(1)} pts</span>
                     </div>
                   </div>
-                ))}
+                  ));
+                })()}
               </div>
             )}
           </div>
@@ -1610,6 +1616,8 @@ function CaptainView({state, setState, onSwitch}) {
       team1Score: p.team1,
       team2Score: p.team2,
       winner,
+      team1Players: players.team1.map(pl => pl.name),
+      team2Players: players.team2.map(pl => pl.name),
       playerStats: pStats,
     };
     persist({ archives: [...(state.archives||[]), entry] });
