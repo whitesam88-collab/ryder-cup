@@ -308,7 +308,8 @@ const DEFAULT_STATE = {
 // ═══════════════════════════════════════════════════════════════════════════════
 // BANDON DUNES 2027 TEASER
 // ═══════════════════════════════════════════════════════════════════════════════
-function BandonTeaserPage({ onBack }) {
+function BandonTeaserPage({ onEnter, onBack }) {
+  const handleEnter = onEnter || onBack;
   return (
     <div style={{minHeight:"100vh",position:"relative",overflow:"hidden",fontFamily:"Georgia,serif",color:"#fff"}}>
       {/* Sky gradient — dramatic Oregon dusk */}
@@ -361,9 +362,6 @@ function BandonTeaserPage({ onBack }) {
       {/* Content overlay */}
       <div style={{position:"relative",zIndex:10,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",padding:"80px 24px 120px",textAlign:"center"}}>
 
-        {/* Back */}
-        <button onClick={onBack} style={{position:"absolute",top:20,left:20,...BTN("rgba(0,0,0,0.3)"),padding:"8px 14px",fontSize:12,border:"1px solid rgba(255,255,255,0.15)"}}>← Back</button>
-
         {/* Eyebrow */}
         <div style={{fontSize:9,letterSpacing:6,color:"rgba(255,255,255,0.4)",marginBottom:12,textTransform:"uppercase"}}>Ryder Cup · Oregon Coast</div>
 
@@ -393,6 +391,11 @@ function BandonTeaserPage({ onBack }) {
 
         {/* Coming soon badge */}
         <div style={{marginTop:28,fontSize:10,letterSpacing:4,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>Coming Fall 2027</div>
+
+        {/* Enter CTA */}
+        <button onClick={handleEnter} style={{marginTop:36,...BTN("rgba(201,168,76,0.15)"),padding:"14px 40px",border:`1px solid ${gold}`,color:gold,fontSize:14,letterSpacing:2,borderRadius:30}}>
+          ENTER →
+        </button>
       </div>
     </div>
   );
@@ -478,9 +481,7 @@ function HistoryView({ archives, onBack }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 function PlayerPicker({players, teamNames, onSelect, archives}) {
   const [showHistory, setShowHistory] = useState(false);
-  const [showBandon, setShowBandon] = useState(false);
   if (showHistory) return <HistoryView archives={archives} onBack={()=>setShowHistory(false)}/>;
-  if (showBandon) return <BandonTeaserPage onBack={()=>setShowBandon(false)}/>;
   return (
     <div style={{minHeight:"100vh",background:BG,fontFamily:"Georgia,serif",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
       <img src="/logo.webp" alt="logo" style={{width:120,height:150,objectFit:"contain",marginBottom:10,display:"block"}}/>
@@ -509,9 +510,6 @@ function PlayerPicker({players, teamNames, onSelect, archives}) {
           </button>
           <button onClick={()=>setShowHistory(true)} style={{...BTN("rgba(255,255,255,0.05)"),width:"100%",padding:11,border:"1px solid rgba(255,255,255,0.12)",color:"rgba(255,255,255,0.5)",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
             🏆 Past Trips{archives?.length?` (${archives.length})`:""}
-          </button>
-          <button onClick={()=>setShowBandon(true)} style={{...BTN("rgba(13,40,80,0.6)"),width:"100%",padding:13,border:"1px solid rgba(90,160,200,0.35)",color:"rgba(140,200,230,0.9)",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",gap:8,letterSpacing:1}}>
-            🌊 <span>Bandon Dunes <span style={{color:"rgba(201,168,76,0.9)"}}>2027</span></span>
           </button>
         </div>
       </div>
@@ -2317,6 +2315,7 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const [state, setState] = useState(DEFAULT_STATE);
   const [currentPlayer, setCurrentPlayer] = useState(null);
+  const [showTeaser, setShowTeaser] = useState(true);
 
   useEffect(() => {
     async function load() {
@@ -2354,6 +2353,10 @@ export default function App() {
 
   const allNames = [...state.players.team1, ...state.players.team2].map(p => p.name);
   const valid = currentPlayer === "__captain__" || allNames.includes(currentPlayer);
+
+  if (showTeaser) {
+    return <BandonTeaserPage onEnter={()=>setShowTeaser(false)}/>;
+  }
 
   if (!currentPlayer || !valid) {
     return <PlayerPicker players={state.players} teamNames={state.teamNames} onSelect={selectPlayer} archives={state.archives}/>;
