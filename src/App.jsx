@@ -306,6 +306,99 @@ const DEFAULT_STATE = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// BANDON DUNES 2027 TEASER
+// ═══════════════════════════════════════════════════════════════════════════════
+function BandonTeaserPage({ onBack }) {
+  return (
+    <div style={{minHeight:"100vh",position:"relative",overflow:"hidden",fontFamily:"Georgia,serif",color:"#fff"}}>
+      {/* Sky gradient — dramatic Oregon dusk */}
+      <div style={{position:"absolute",inset:0,background:"linear-gradient(180deg,#06111f 0%,#0b2039 18%,#133256 32%,#1f5080 44%,#3a7ea8 52%,#5ba4c0 57%,#8dc4d6 61%,#b0d8e0 63%,#7eadb8 66%,#3a7a60 70%,#1f5035 78%,#122b1d 88%,#070f0a 100%)"}}/>
+
+      {/* Stars */}
+      {[{x:12,y:5,s:1.5},{x:28,y:3,s:1},{x:45,y:7,s:1.2},{x:63,y:2,s:1},{x:78,y:6,s:1.5},{x:88,y:4,s:1},{x:20,y:12,s:0.8},{x:55,y:9,s:1},{x:72,y:14,s:0.8},{x:35,y:16,s:1.2},{x:92,y:11,s:0.9},{x:5,y:18,s:0.7}].map((st,i)=>(
+        <div key={i} style={{position:"absolute",left:`${st.x}%`,top:`${st.y}%`,width:st.s,height:st.s,borderRadius:"50%",background:"rgba(255,255,255,0.9)",boxShadow:"0 0 3px rgba(255,255,255,0.6)"}}/>
+      ))}
+
+      {/* Horizon glow — sunset on the Pacific */}
+      <div style={{position:"absolute",top:"58%",left:"10%",right:"10%",height:60,background:"radial-gradient(ellipse at 50% 100%,rgba(255,220,130,0.18) 0%,transparent 70%)",pointerEvents:"none"}}/>
+
+      {/* Ocean band */}
+      <div style={{position:"absolute",top:"62%",left:0,right:0,height:"8%",background:"linear-gradient(180deg,#8dc4d6 0%,#5ba4c0 30%,#2d7a9a 70%,#1a5570 100%)",opacity:0.9}}/>
+
+      {/* Mist at horizon */}
+      <div style={{position:"absolute",top:"60%",left:0,right:0,height:40,background:"linear-gradient(180deg,transparent,rgba(200,230,240,0.12),transparent)",filter:"blur(6px)",pointerEvents:"none"}}/>
+
+      {/* Far cliff silhouette */}
+      <div style={{position:"absolute",bottom:0,left:0,right:0}}>
+        <svg viewBox="0 0 800 320" preserveAspectRatio="none" style={{width:"100%",display:"block"}}>
+          {/* distant headland */}
+          <path d="M0,320 L0,180 Q80,140 180,155 Q260,165 340,145 Q420,128 500,140 Q580,150 650,135 Q720,120 800,140 L800,320 Z" fill="#0d2a18" opacity="0.6"/>
+          {/* mid cliff layer */}
+          <path d="M0,320 L0,200 Q60,170 140,185 Q210,198 290,175 Q360,158 440,170 Q520,180 600,162 Q680,148 800,165 L800,320 Z" fill="#112c1a" opacity="0.75"/>
+          {/* main cliff face */}
+          <path d="M0,320 L0,230 Q40,210 90,220 Q130,228 160,215 Q200,200 240,208 Q290,218 320,205 Q370,190 410,200 Q460,212 510,198 Q560,185 600,195 Q650,207 700,194 Q750,182 800,192 L800,320 Z" fill="#0f2419"/>
+          {/* foreground turf shelf — the links */}
+          <path d="M0,320 L0,268 Q30,255 70,260 Q110,265 150,255 Q190,245 230,252 Q270,258 310,248 Q350,238 390,245 Q430,252 470,242 Q510,232 550,240 Q590,248 630,238 Q670,228 720,236 Q760,243 800,235 L800,320 Z" fill="#1a3d24"/>
+          {/* grass texture strokes on foreground */}
+          {Array.from({length:28},(_,i)=>{
+            const x = (i/27)*800;
+            const baseY = 248 + Math.sin(i*1.3)*8;
+            return <line key={i} x1={x} y1={baseY} x2={x+2} y2={baseY-14-Math.random()*6} stroke="#2d6035" strokeWidth="1.5" strokeLinecap="round" opacity={0.7+Math.sin(i)*0.3}/>;
+          })}
+          {/* fescue grass tufts */}
+          {Array.from({length:18},(_,i)=>{
+            const x = 20+(i/17)*760;
+            const baseY = 258 + Math.sin(i*2.1)*6;
+            return <g key={`t${i}`}>
+              <line x1={x} y1={baseY} x2={x-5} y2={baseY-20} stroke="#3a7040" strokeWidth="1" strokeLinecap="round" opacity="0.8"/>
+              <line x1={x} y1={baseY} x2={x} y2={baseY-22} stroke="#2d5a30" strokeWidth="1" strokeLinecap="round" opacity="0.9"/>
+              <line x1={x} y1={baseY} x2={x+6} y2={baseY-18} stroke="#3a7040" strokeWidth="1" strokeLinecap="round" opacity="0.7"/>
+            </g>;
+          })}
+        </svg>
+      </div>
+
+      {/* Content overlay */}
+      <div style={{position:"relative",zIndex:10,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",padding:"80px 24px 120px",textAlign:"center"}}>
+
+        {/* Back */}
+        <button onClick={onBack} style={{position:"absolute",top:20,left:20,...BTN("rgba(0,0,0,0.3)"),padding:"8px 14px",fontSize:12,border:"1px solid rgba(255,255,255,0.15)"}}>← Back</button>
+
+        {/* Eyebrow */}
+        <div style={{fontSize:9,letterSpacing:6,color:"rgba(255,255,255,0.4)",marginBottom:12,textTransform:"uppercase"}}>Ryder Cup · Oregon Coast</div>
+
+        {/* Main title */}
+        <div style={{fontSize:58,fontWeight:"bold",letterSpacing:5,lineHeight:0.95,textShadow:"0 2px 24px rgba(0,0,0,0.7)",marginBottom:4}}>BANDON</div>
+        <div style={{fontSize:58,fontWeight:"bold",letterSpacing:5,lineHeight:0.95,color:gold,textShadow:`0 2px 24px rgba(0,0,0,0.7)`,marginBottom:16}}>DUNES</div>
+        <div style={{fontSize:28,letterSpacing:8,color:"rgba(255,255,255,0.65)",fontWeight:"normal",textShadow:"0 2px 12px rgba(0,0,0,0.6)",marginBottom:32}}>2027</div>
+
+        {/* Divider */}
+        <div style={{width:60,height:1,background:`linear-gradient(90deg,transparent,${gold},transparent)`,marginBottom:28}}/>
+
+        {/* Tagline */}
+        <div style={{fontSize:14,color:"rgba(255,255,255,0.55)",fontStyle:"italic",maxWidth:260,lineHeight:1.7,marginBottom:36,textShadow:"0 1px 8px rgba(0,0,0,0.6)"}}>
+          Where the wild Pacific meets the finest links in America
+        </div>
+
+        {/* Courses */}
+        <div style={{background:"rgba(0,0,0,0.35)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:14,padding:"18px 24px",maxWidth:300,width:"100%",backdropFilter:"blur(8px)"}}>
+          <div style={{fontSize:9,color:gold,letterSpacing:3,marginBottom:14}}>THE COURSES</div>
+          {["Bandon Dunes","Pacific Dunes","Bandon Trails","Old Macdonald","Sheep Ranch"].map((c,i)=>(
+            <div key={c} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:i<4?"1px solid rgba(255,255,255,0.06)":"none"}}>
+              <div style={{width:20,height:1,background:`rgba(201,168,76,0.4)`}}/>
+              <span style={{fontSize:13,color:"rgba(255,255,255,0.75)"}}>{c}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Coming soon badge */}
+        <div style={{marginTop:28,fontSize:10,letterSpacing:4,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>Coming Fall 2027</div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // HISTORY VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
 function HistoryView({ archives, onBack }) {
@@ -385,7 +478,9 @@ function HistoryView({ archives, onBack }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 function PlayerPicker({players, teamNames, onSelect, archives}) {
   const [showHistory, setShowHistory] = useState(false);
+  const [showBandon, setShowBandon] = useState(false);
   if (showHistory) return <HistoryView archives={archives} onBack={()=>setShowHistory(false)}/>;
+  if (showBandon) return <BandonTeaserPage onBack={()=>setShowBandon(false)}/>;
   return (
     <div style={{minHeight:"100vh",background:BG,fontFamily:"Georgia,serif",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
       <img src="/logo.webp" alt="logo" style={{width:120,height:150,objectFit:"contain",marginBottom:10,display:"block"}}/>
@@ -414,6 +509,9 @@ function PlayerPicker({players, teamNames, onSelect, archives}) {
           </button>
           <button onClick={()=>setShowHistory(true)} style={{...BTN("rgba(255,255,255,0.05)"),width:"100%",padding:11,border:"1px solid rgba(255,255,255,0.12)",color:"rgba(255,255,255,0.5)",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
             🏆 Past Trips{archives?.length?` (${archives.length})`:""}
+          </button>
+          <button onClick={()=>setShowBandon(true)} style={{...BTN("rgba(13,40,80,0.6)"),width:"100%",padding:13,border:"1px solid rgba(90,160,200,0.35)",color:"rgba(140,200,230,0.9)",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",gap:8,letterSpacing:1}}>
+            🌊 <span>Bandon Dunes <span style={{color:"rgba(201,168,76,0.9)"}}>2027</span></span>
           </button>
         </div>
       </div>
