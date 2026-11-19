@@ -342,6 +342,7 @@ function PlayerView({playerName, state, setState, onSwitch}) {
 
   const TABS=[{id:"board",l:"🏆 Board"},{id:"matches",l:"🏌️ My Matches"},{id:"bets",l:"💰 Bets"}];
   const [openMatch, setOpenMatch] = useState(null); // {course, mi, pair}
+  const [boardOpenMatch, setBoardOpenMatch] = useState(null); // read-only view from Board tab
   const [expandedRounds, setExpandedRounds] = useState(() => {
     const init={};
     courses.forEach(c=>{ init[c.id]=true; });
@@ -364,7 +365,7 @@ function PlayerView({playerName, state, setState, onSwitch}) {
       {/* Tabs */}
       <div style={{display:"flex",borderBottom:"1px solid rgba(255,255,255,0.1)",background:"rgba(0,0,0,0.3)",overflowX:"auto"}}>
         {TABS.map(t=>(
-          <button key={t.id} onClick={()=>{setTab(t.id);if(t.id!=="matches")setOpenMatch(null);}} style={{flex:1,padding:"12px 4px",border:"none",cursor:"pointer",fontFamily:"Georgia,serif",fontSize:10,whiteSpace:"nowrap",background:"transparent",color:tab===t.id?gold:"rgba(255,255,255,0.4)",borderBottom:tab===t.id?`2px solid ${gold}`:"2px solid transparent"}}>{t.l}</button>
+          <button key={t.id} onClick={()=>{setTab(t.id);if(t.id!=="matches")setOpenMatch(null);if(t.id!=="board")setBoardOpenMatch(null);}} style={{flex:1,padding:"12px 4px",border:"none",cursor:"pointer",fontFamily:"Georgia,serif",fontSize:10,whiteSpace:"nowrap",background:"transparent",color:tab===t.id?gold:"rgba(255,255,255,0.4)",borderBottom:tab===t.id?`2px solid ${gold}`:"2px solid transparent"}}>{t.l}</button>
         ))}
       </div>
       <div style={{padding:16,maxWidth:600,margin:"0 auto"}}>
@@ -493,7 +494,51 @@ function PlayerView({playerName, state, setState, onSwitch}) {
         })()}
 
         {/* BOARD */}
-        {tab==="board"&&(
+        {tab==="board"&&boardOpenMatch&&(()=>{
+          const {course,mi,pair,t1n,t2n}=boardOpenMatch;
+          const ls=getMatchLiveStatus(course.id,mi,matches);
+          let hdrText,hdrColor;
+          if(ls.status==="complete"){
+            const winner=ls.result==="team1"?teamNames.team1:ls.result==="team2"?teamNames.team2:null;
+            hdrText=winner?`${winner} wins ${ls.resultText}`:ls.resultText;
+            hdrColor=ls.result==="team1"?"#4ade80":ls.result==="team2"?"#f87171":gold;
+          } else if(ls.status==="dormie"){
+            hdrText=`Dormie ${Math.abs(ls.lead)} — ${ls.lead>0?teamNames.team1:teamNames.team2}`;
+            hdrColor=ls.lead>0?"#4ade80":"#f87171";
+          } else if(ls.played>0){
+            const leadTeam=ls.lead>0?teamNames.team1:ls.lead<0?teamNames.team2:null;
+            hdrText=leadTeam?`${leadTeam} ${Math.abs(ls.lead)} UP thru ${ls.played}`:`All Square thru ${ls.played}`;
+            hdrColor=ls.lead>0?"#4ade80":ls.lead<0?"#f87171":gold;
+          } else { hdrText="Not Started"; hdrColor="rgba(255,255,255,0.3)"; }
+          return (
+            <div>
+              <button onClick={()=>setBoardOpenMatch(null)} style={{...BTN("rgba(255,255,255,0.08)"),fontSize:12,padding:"7px 14px",marginBottom:14}}>← Back</button>
+              <div style={{...CARD,borderLeft:`3px solid ${hdrColor}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+                  <div style={{fontSize:10,color:gold,letterSpacing:2}}>{course.day} — {course.name}</div>
+                  <span style={{fontSize:9,background:"rgba(201,168,76,0.15)",border:`1px solid rgba(201,168,76,0.3)`,borderRadius:10,padding:"2px 8px",color:gold,letterSpacing:1}}>VIEW ONLY</span>
+                </div>
+                <div style={{fontSize:13,marginBottom:8}}>
+                  <span style={{color:"#4ade80"}}>{t1n}</span>
+                  <span style={{color:"rgba(255,255,255,0.3)",margin:"0 8px"}}>vs</span>
+                  <span style={{color:"#f87171"}}>{t2n}</span>
+                </div>
+                <div style={{fontSize:16,fontWeight:"bold",color:hdrColor}}>{hdrText}</div>
+              </div>
+              <HoleScoringSection
+                courseId={course.id}
+                matchIdx={mi}
+                matches={matches}
+                teamNames={teamNames}
+                state={state}
+                setState={setState}
+                readOnly={true}
+              />
+            </div>
+          );
+        })()}
+
+        {tab==="board"&&!boardOpenMatch&&(
           <div>
             <span style={SH}>SCOREBOARD</span>
             <div style={{...CARD,textAlign:"center"}}>
@@ -557,7 +602,7 @@ function PlayerView({playerName, state, setState, onSwitch}) {
                       liveText="Not started"; liveColor="rgba(255,255,255,0.25)"; liveDot=false;
                     }
                     return (
-                      <div key={mi} style={{borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:8,marginTop:mi===0?0:6}}>
+                      <div key={mi} onClick={()=>setBoardOpenMatch({course,mi,pair,t1n,t2n})} style={{borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:8,marginTop:mi===0?0:6,cursor:"pointer",borderRadius:6,margin:mi===0?"0 -4px":"-2px -4px 0",padding:"8px 4px 4px"}}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
                           <div style={{fontSize:11,minWidth:0,flex:1}}>
                             <span style={{color:"#4ade80"}}>{t1n}</span>
@@ -567,6 +612,7 @@ function PlayerView({playerName, state, setState, onSwitch}) {
                           <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
                             {liveDot&&<span style={{width:6,height:6,borderRadius:"50%",background:liveColor,display:"inline-block",animation:"pulse 1.5s infinite"}}/>}
                             <span style={{fontSize:11,fontWeight:"bold",color:liveColor}}>{liveText}</span>
+                            <span style={{fontSize:10,color:"rgba(255,255,255,0.2)"}}>›</span>
                           </div>
                         </div>
                       </div>
@@ -1033,7 +1079,7 @@ function LiveScoresSection({courses, players, roundScores, teamNames}) {
 
 // ─── Hole-by-hole scoring (Match Play) ───────────────────────────────────────
 // Each hole is marked Team 1, Team 2, or unset. Stored in matches[courseId][matchIdx].holes.
-function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state, setState }) {
+function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state, setState, readOnly = false }) {
   function initHoles() {
     const existing = matches?.[courseId]?.[matchIdx]?.holes;
     return existing?.length === 18 ? [...existing] : Array(18).fill(null);
@@ -1096,6 +1142,7 @@ function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state, set
   }
 
   function toggleHole(idx) {
+    if (readOnly) return;
     if (decidedOnHole !== null && idx >= decidedOnHole) return;
     const n = [...holes];
     n[idx] = !n[idx] ? "team1" : n[idx] === "team1" ? "team2" : n[idx] === "team2" ? "half" : null;
@@ -1114,9 +1161,9 @@ function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state, set
     const si = getHoleStrokeInfo(holeNum);
     return (
       <div key={h} style={{ flex: 1, minWidth: 0, position: "relative" }}>
-        <button onClick={() => toggleHole(h)} disabled={afterCloseout} style={{
+        <button onClick={() => toggleHole(h)} disabled={afterCloseout || readOnly} style={{
           width: "100%", height: 44, border: "none", borderRadius: 6,
-          cursor: afterCloseout ? "default" : "pointer",
+          cursor: (afterCloseout || readOnly) ? "default" : "pointer",
           fontFamily: "Georgia,serif", fontSize: 11, fontWeight: "bold", padding: 0,
           opacity: afterCloseout ? 0.25 : 1,
           background: afterCloseout ? "rgba(0,0,0,0.15)" : v === "team1" ? "rgba(74,222,128,0.25)" : v === "team2" ? "rgba(248,113,113,0.25)" : v === "half" ? "rgba(201,168,76,0.2)" : "rgba(0,0,0,0.35)",
@@ -1231,7 +1278,7 @@ function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state, set
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <div style={{ fontSize: 11, color: gold, letterSpacing: 2, fontWeight: "bold" }}>SCORECARD</div>
-        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)" }}>tap hole to cycle: T1 → T2 → ½ → clear</div>
+        {!readOnly && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)" }}>tap hole to cycle: T1 → T2 → ½ → clear</div>}
       </div>
       {matchStatus === "complete" && (
         <div style={{ background: ms.result === "team1" ? "rgba(74,222,128,0.12)" : ms.result === "team2" ? "rgba(248,113,113,0.12)" : "rgba(201,168,76,0.12)", border: `1px solid ${statusBarColor}`, borderRadius: 8, padding: "10px 14px", marginBottom: 12, textAlign: "center" }}>
@@ -1337,9 +1384,11 @@ function HoleScoringSection({ courseId, matchIdx, matches, teamNames, state, set
           <div style={{ fontSize: 15, fontWeight: "bold", color: statusBarColor }}>{statusBarText}</div>
         </div>
       )}
-      <div style={{ textAlign:"center", padding:"10px 0", fontSize:12, color: saving?"rgba(255,255,255,0.4)":saved?"#4ade80":"rgba(255,255,255,0.2)", letterSpacing:1 }}>
-        {saving ? "Saving..." : saved ? "✓ Saved" : "Tap holes to score · saves automatically"}
-      </div>
+      {!readOnly && (
+        <div style={{ textAlign:"center", padding:"10px 0", fontSize:12, color: saving?"rgba(255,255,255,0.4)":saved?"#4ade80":"rgba(255,255,255,0.2)", letterSpacing:1 }}>
+          {saving ? "Saving..." : saved ? "✓ Saved" : "Tap holes to score · saves automatically"}
+        </div>
+      )}
 
       {/* Hole stroke popover */}
       {holePopover !== null && strokeAlloc && !strokeAlloc.missingHandicap && (
