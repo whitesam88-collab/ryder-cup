@@ -44,6 +44,32 @@ function initPairings() {
     4:[{t1:[0],t2:[0]},{t1:[1],t2:[1]},{t1:[2],t2:[2]},{t1:[3],t2:[3]},{t1:[4],t2:[4]},{t1:[5],t2:[5]}],
   };
 }
+function computePlayerStats(state) {
+  const { pairings, matches, players, courseList } = state;
+  const courses = getMergedCourses(courseList);
+  const stats = {};
+  courses.forEach(course => {
+    const coursePairings = pairings?.[course.id] || [];
+    const courseMatches = matches?.[course.id] || [];
+    coursePairings.forEach((pair, mi) => {
+      const result = courseMatches[mi]?.result;
+      if (!result) return;
+      const t1Names = (pair.t1||[]).map(j => players?.team1?.[j]?.name).filter(Boolean);
+      const t2Names = (pair.t2||[]).map(j => players?.team2?.[j]?.name).filter(Boolean);
+      [...t1Names, ...t2Names].forEach(name => {
+        if (!stats[name]) stats[name] = { gp:0, w:0, l:0, h:0, pts:0 };
+        stats[name].gp++;
+        if (result === "half") { stats[name].h++; stats[name].pts += 0.5; }
+        else {
+          const isT1 = t1Names.includes(name);
+          const won = (isT1 && result==="team1") || (!isT1 && result==="team2");
+          if (won) { stats[name].w++; stats[name].pts += 1; } else stats[name].l++;
+        }
+      });
+    });
+  });
+  return stats;
+}
 // Pure match-play state machine — derives close-out, Dormie, and result notation
 // holeResults: array of "team1"|"team2"|"half"|null  (null = not yet played)
 // Side A = "team1", Side B = "team2"
@@ -276,12 +302,84 @@ const DEFAULT_STATE = {
   courseList: COURSES.map(c=>({id:c.id,name:c.name,day:c.day,gameType:c.gameType,holeStrokeIndexes:[]})),
   bets: [],
   roundScores: {},
+  archives: [],
 };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HISTORY VIEW
+// ═══════════════════════════════════════════════════════════════════════════════
+function HistoryView({ archives, onBack }) {
+  const [expanded, setExpanded] = useState(null);
+  return (
+    <div style={{minHeight:"100vh",background:BG,fontFamily:"Georgia,serif",color:"#fff",padding:20,maxWidth:480,margin:"0 auto"}}>
+      <button onClick={onBack} style={{...BTN("rgba(255,255,255,0.08)"),marginBottom:20,padding:"8px 16px",fontSize:12}}>← Back</button>
+      <div style={{fontSize:11,color:gold,letterSpacing:3,marginBottom:20}}>TRIP HISTORY</div>
+      {(!archives||archives.length===0)&&(
+        <div style={{...CARD,textAlign:"center",padding:32}}>
+          <div style={{fontSize:24,marginBottom:12}}>🏆</div>
+          <div style={{color:"rgba(255,255,255,0.4)",fontSize:13}}>No archived trips yet.</div>
+          <div style={{color:"rgba(255,255,255,0.25)",fontSize:11,marginTop:8}}>The Captain can archive a completed trip from the Setup tab.</div>
+        </div>
+      )}
+      {[...(archives||[])].reverse().map(a=>{
+        const isExp = expanded===a.id;
+        const stats = a.playerStats||{};
+        const sorted = Object.entries(stats).sort((x,y)=>y[1].pts-x[1].pts);
+        const dateStr = a.archivedAt ? new Date(a.archivedAt).toLocaleDateString("en-US",{year:"numeric",month:"short",day:"numeric"}) : "";
+        const winnerName = a.winner==="tie" ? "Tied" : a.winner==="team1" ? a.team1Name : a.team2Name;
+        const winColor = a.winner==="team1"?"#4ade80":a.winner==="team2"?"#f87171":gold;
+        return (
+          <div key={a.id} style={{...CARD,cursor:"pointer",marginBottom:12}} onClick={()=>setExpanded(isExp?null:a.id)}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+              <div>
+                <div style={{fontSize:15,fontWeight:"bold",marginBottom:2}}>{a.name}</div>
+                <div style={{fontSize:10,color:"rgba(255,255,255,0.3)",letterSpacing:1}}>{dateStr}</div>
+              </div>
+              <span style={{fontSize:12,color:isExp?"rgba(255,255,255,0.5)":"rgba(255,255,255,0.3)",marginTop:2}}>{isExp?"▲":"▼"}</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(0,0,0,0.2)",borderRadius:8,padding:"10px 14px",marginBottom:isExp?12:0}}>
+              <div style={{textAlign:"center"}}>
+                <div style={{fontSize:22,fontWeight:"bold",color:"#4ade80"}}>{a.team1Score}</div>
+                <div style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>{a.team1Name}</div>
+              </div>
+              <div style={{textAlign:"center"}}>
+                <div style={{fontSize:10,color:"rgba(255,255,255,0.3)"}}>of 15 pts</div>
+                {a.winner!=="tie"&&<div style={{fontSize:11,color:winColor,fontWeight:"bold",marginTop:4}}>🏆 {winnerName}</div>}
+                {a.winner==="tie"&&<div style={{fontSize:11,color:gold,marginTop:4}}>½ Tied</div>}
+              </div>
+              <div style={{textAlign:"center"}}>
+                <div style={{fontSize:22,fontWeight:"bold",color:"#f87171"}}>{a.team2Score}</div>
+                <div style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>{a.team2Name}</div>
+              </div>
+            </div>
+            {isExp&&sorted.length>0&&(
+              <div>
+                <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",letterSpacing:3,marginBottom:8}}>PLAYER RECORDS</div>
+                {sorted.map(([name,s],idx)=>(
+                  <div key={name} style={{display:"flex",alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                    <div style={{width:22,fontSize:10,color:idx<3?gold:"rgba(255,255,255,0.3)",fontWeight:"bold"}}>{idx+1}.</div>
+                    <div style={{flex:1,fontSize:13}}>{name}</div>
+                    <div style={{display:"flex",gap:12,alignItems:"center"}}>
+                      <span style={{fontSize:10,color:"rgba(255,255,255,0.35)"}}>{s.w}-{s.l}-{s.h}</span>
+                      <span style={{fontSize:14,fontWeight:"bold",color:s.pts>0?gold:"rgba(255,255,255,0.4)",minWidth:36,textAlign:"right"}}>{s.pts%1===0?s.pts:s.pts.toFixed(1)} pts</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PLAYER PICKER
 // ═══════════════════════════════════════════════════════════════════════════════
-function PlayerPicker({players, teamNames, onSelect}) {
+function PlayerPicker({players, teamNames, onSelect, archives}) {
+  const [showHistory, setShowHistory] = useState(false);
+  if (showHistory) return <HistoryView archives={archives} onBack={()=>setShowHistory(false)}/>;
   return (
     <div style={{minHeight:"100vh",background:BG,fontFamily:"Georgia,serif",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
       <img src="/logo.webp" alt="logo" style={{width:120,height:150,objectFit:"contain",marginBottom:10,display:"block"}}/>
@@ -304,9 +402,12 @@ function PlayerPicker({players, teamNames, onSelect}) {
             ))}
           </div>
         ))}
-        <div style={{borderTop:"1px solid rgba(255,255,255,0.1)",paddingTop:16,marginTop:4}}>
+        <div style={{borderTop:"1px solid rgba(255,255,255,0.1)",paddingTop:16,marginTop:4,display:"flex",flexDirection:"column",gap:10}}>
           <button onClick={()=>onSelect("__captain__")} style={{...BTN("rgba(201,168,76,0.12)"),width:"100%",padding:13,border:`1px solid ${gold}`,color:gold,fontSize:14}}>
             ⚙️ Captain / Admin View
+          </button>
+          <button onClick={()=>setShowHistory(true)} style={{...BTN("rgba(255,255,255,0.05)"),width:"100%",padding:11,border:"1px solid rgba(255,255,255,0.12)",color:"rgba(255,255,255,0.5)",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+            🏆 Past Trips{archives?.length?` (${archives.length})`:""}
           </button>
         </div>
       </div>
@@ -1462,6 +1563,8 @@ function CaptainView({state, setState, onSwitch}) {
   const [scorecardMsg,setScorecardMsg]=useState("");
   const [setupDraft,setSetupDraft]=useState({teamNames,players:{...players,pool:players.pool||[]},rules,courseList});
   const [setupDirty,setSetupDirty]=useState(false);
+  const [archiveName,setArchiveName]=useState("");
+  const [archiveConfirm,setArchiveConfirm]=useState(false);
 
   const pts=calcPoints(matches);
   const winner=pts.team1>=8?"team1":pts.team2>=8?"team2":null;
@@ -1492,6 +1595,26 @@ function CaptainView({state, setState, onSwitch}) {
   async function saveSetup() {
     await persist(setupDraft);
     setSetupDirty(false);
+  }
+
+  function archiveTrip() {
+    const pStats = computePlayerStats(state);
+    const p = calcPoints(matches);
+    const winner = p.team1 > p.team2 ? "team1" : p.team2 > p.team1 ? "team2" : "tie";
+    const entry = {
+      id: Date.now(),
+      name: archiveName.trim() || `Ryder Cup ${new Date().getFullYear()}`,
+      archivedAt: new Date().toISOString(),
+      team1Name: teamNames.team1,
+      team2Name: teamNames.team2,
+      team1Score: p.team1,
+      team2Score: p.team2,
+      winner,
+      playerStats: pStats,
+    };
+    persist({ archives: [...(state.archives||[]), entry] });
+    setArchiveName("");
+    setArchiveConfirm(false);
   }
 
   function updDraftPlayer(group, idx, field, val) {
@@ -1977,6 +2100,33 @@ function CaptainView({state, setState, onSwitch}) {
               <button onClick={()=>persist({matches:initMatches()})} style={{...BTN("rgba(255,255,255,0.07)"),border:"1px solid rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.4)",padding:"10px 20px"}}>Reset All Scores</button>
               {setupDirty&&<button onClick={saveSetup} style={{...BTN(gold,"#1a3d24"),padding:"10px 24px",fontSize:14}}>💾 Save Changes</button>}
             </div>
+
+            {/* Archive Trip */}
+            <div style={{...CARD,background:"rgba(201,168,76,0.05)",border:"1px solid rgba(201,168,76,0.2)",marginTop:20}}>
+              <span style={{...SH,marginBottom:10}}>🏆 ARCHIVE THIS TRIP</span>
+              <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:14,lineHeight:1.6}}>Saves a permanent snapshot of the final scores and each player's record. Accessible from the main screen under "Past Trips".</div>
+              <label style={LBL}>TRIP NAME</label>
+              <input
+                value={archiveName}
+                onChange={e=>setArchiveName(e.target.value)}
+                placeholder={`Ryder Cup ${new Date().getFullYear()}`}
+                style={{...IS(gold),marginBottom:12}}
+              />
+              {!archiveConfirm?(
+                <button onClick={()=>setArchiveConfirm(true)} style={{...BTN("rgba(201,168,76,0.15)"),width:"100%",padding:12,border:`1px solid rgba(201,168,76,0.4)`,color:gold,fontSize:13}}>Archive This Ryder Cup</button>
+              ):(
+                <div>
+                  <div style={{fontSize:12,color:gold,marginBottom:10,textAlign:"center"}}>Archive "{archiveName.trim()||`Ryder Cup ${new Date().getFullYear()}`}" with final score {pts.team1}–{pts.team2}?</div>
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={archiveTrip} style={{...BTN(gold,"#1a3d24"),flex:1,padding:11,fontSize:13}}>✓ Confirm Archive</button>
+                    <button onClick={()=>setArchiveConfirm(false)} style={{...BTN("rgba(255,255,255,0.07)"),flex:1,padding:11,color:"rgba(255,255,255,0.4)",fontSize:13}}>Cancel</button>
+                  </div>
+                </div>
+              )}
+              {(state.archives||[]).length>0&&(
+                <div style={{marginTop:14,fontSize:11,color:"rgba(255,255,255,0.3)",textAlign:"center"}}>{state.archives.length} trip{state.archives.length!==1?"s":""} archived</div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -2089,7 +2239,7 @@ export default function App() {
   const valid = currentPlayer === "__captain__" || allNames.includes(currentPlayer);
 
   if (!currentPlayer || !valid) {
-    return <PlayerPicker players={state.players} teamNames={state.teamNames} onSelect={selectPlayer}/>;
+    return <PlayerPicker players={state.players} teamNames={state.teamNames} onSelect={selectPlayer} archives={state.archives}/>;
   }
   if (currentPlayer === "__captain__") {
     return <CaptainView state={state} setState={setState} onSwitch={switchPlayer}/>;
