@@ -390,21 +390,20 @@ function BandonTeaserPage({ onEnter, onBack }) {
         {/* Divider */}
         <div style={{width:60,height:1,background:`linear-gradient(90deg,transparent,${gold},transparent)`,marginBottom:28}}/>
 
+        {/* Countdown */}
+        <div style={{display:"flex",gap:20,justifyContent:"center",marginBottom:28}}>
+          {[["DAYS",countdown.days],["HRS",countdown.hours],["MIN",countdown.minutes],["SEC",countdown.seconds]].map(([label,val])=>(
+            <div key={label} style={{textAlign:"center",minWidth:52}}>
+              <div style={{fontSize:36,fontWeight:"bold",color:"#fff",letterSpacing:1,textShadow:"0 0 20px rgba(0,0,0,0.9),0 2px 8px rgba(0,0,0,0.8)",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{String(val).padStart(2,"0")}</div>
+              <div style={{fontSize:8,letterSpacing:3,color:"rgba(255,255,255,0.5)",marginTop:5,textTransform:"uppercase"}}>{label}</div>
+            </div>
+          ))}
+        </div>
+
         {/* Tagline */}
         <div style={{fontSize:14,color:"rgba(255,255,255,0.55)",fontStyle:"italic",maxWidth:260,lineHeight:1.7,marginBottom:36,textShadow:"0 1px 8px rgba(0,0,0,0.6)"}}>
           Where the wild Pacific meets the finest links in America
         </div>
-
-        {/* Countdown */}
-        <div style={{marginTop:28,display:"flex",gap:20,justifyContent:"center"}}>
-          {[["DAYS",countdown.days],["HRS",countdown.hours],["MIN",countdown.minutes],["SEC",countdown.seconds]].map(([label,val])=>(
-            <div key={label} style={{textAlign:"center",minWidth:52}}>
-              <div style={{fontSize:32,fontWeight:"bold",color:"#fff",letterSpacing:1,textShadow:"0 2px 12px rgba(0,0,0,0.7)",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{String(val).padStart(2,"0")}</div>
-              <div style={{fontSize:8,letterSpacing:3,color:"rgba(255,255,255,0.35)",marginTop:4,textTransform:"uppercase"}}>{label}</div>
-            </div>
-          ))}
-        </div>
-        <div style={{marginTop:12,fontSize:9,letterSpacing:3,color:"rgba(255,255,255,0.25)",textTransform:"uppercase"}}>Until Tee Time · Aug 18, 2027</div>
 
         {/* Enter CTA */}
         <button onClick={handleEnter} style={{marginTop:36,...BTN("rgba(201,168,76,0.15)"),padding:"14px 40px",border:`1px solid ${gold}`,color:gold,fontSize:14,letterSpacing:2,borderRadius:30}}>
